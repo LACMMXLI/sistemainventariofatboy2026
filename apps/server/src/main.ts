@@ -1,12 +1,16 @@
 import "reflect-metadata";
+import { resolve } from "node:path";
+import { config } from "dotenv";
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
-import { AppModule } from "./app.module";
 import { ApiExceptionFilter } from "./api-exception.filter";
 
+config({ path: resolve(__dirname, "../../../.env") });
+
 async function bootstrap() {
+  const { AppModule } = await import("./app.module");
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix("api");
   app.use(helmet({ contentSecurityPolicy: false }));
