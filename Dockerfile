@@ -24,4 +24,6 @@ COPY --from=build /app/apps/web/dist apps/web/dist
 COPY --from=build /app/packages/shared/dist packages/shared/dist
 USER node
 EXPOSE 3000
-CMD ["sh", "-c", "npm run db:migrate && node apps/server/dist/main.js"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+CMD ["sh", "-c", "npm run db:migrate && node apps/server/dist/seed.js && node apps/server/dist/main.js"]

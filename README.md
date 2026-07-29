@@ -29,7 +29,9 @@ npm run dev:web
 
 La API queda en `http://localhost:3000/api`, Swagger en `/api/docs` y Vite en `http://localhost:5173`.
 
-El seed crea únicamente las cuentas cuyas contraseñas se proporcionen mediante variables de entorno. No existen contraseñas predeterminadas en el repositorio.
+El seed crea o conserva únicamente el usuario dueño definido por
+`SYSTEM_OWNER_EMAIL` y `SYSTEM_OWNER_PASSWORD`. No existen contraseñas
+predeterminadas en el repositorio.
 
 ## Validación
 
@@ -38,15 +40,25 @@ npm test
 npm run build
 ```
 
-## Docker
+## Coolify / Docker
 
-Definir `POSTGRES_PASSWORD`, `JWT_SECRET` y los secretos de la cuenta superior fuera del repositorio:
+Desplegar el repositorio con Docker Compose y definir en Coolify:
+
+- `POSTGRES_PASSWORD`
+- `JWT_SECRET` (mínimo 32 caracteres)
+- `SYSTEM_OWNER_EMAIL`
+- `SYSTEM_OWNER_PASSWORD`
+
+El dominio debe apuntar al servicio `app`, puerto `3000`. Para probarlo
+localmente:
 
 ```powershell
 docker compose up --build
 ```
 
-La aplicación ejecuta migraciones pendientes antes de iniciar.
+Al iniciar, la aplicación espera a PostgreSQL, ejecuta las migraciones, crea o
+conserva al dueño y después levanta la API. La salud del contenedor se valida
+en `/api/health`.
 
 ## Respaldos
 

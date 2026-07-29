@@ -644,7 +644,7 @@ export function ReceivingPage() {
         const sent = Number(line.sentQuantity);
         const diff = received - sent;
         return {
-          productId: line.productId,
+          productId: line.product.id,
           productName: line.product.name,
           sent,
           received,
