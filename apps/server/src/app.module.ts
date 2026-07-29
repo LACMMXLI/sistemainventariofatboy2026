@@ -1,8 +1,6 @@
 import { Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
 import { ThrottlerModule } from "@nestjs/throttler";
-import { ServeStaticModule } from "@nestjs/serve-static";
-import { join } from "node:path";
 import { AuthController } from "./auth/auth.controller";
 import { AuthService } from "./auth/auth.service";
 import { AuthGuard, RolesGuard } from "./auth/auth.guard";
@@ -28,11 +26,6 @@ if (process.env.NODE_ENV === "production" && (!jwtSecret || jwtSecret.length < 3
       signOptions: { expiresIn: "15m" }
     }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }])
-    ,
-    ServeStaticModule.forRoot({
-      rootPath: join(process.cwd(), "apps", "web", "dist"),
-      exclude: ["/api/{*path}"]
-    })
   ],
   controllers: [
     AuthController,
