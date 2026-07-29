@@ -34,15 +34,26 @@ export class OperationsService {
 
   async dashboard(user: AuthUser, requestedLocationId?: string) {
     const locationId = this.scopedLocation(user, requestedLocationId);
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const startOfWeek = new Date();
+    startOfWeek.setDate(startOfWeek.getDate() - 7);
+
     const [
       pendingRequests,
+      partialRequests,
       preparingTransfers,
       inRoute,
       pendingReceipts,
       openIncidents,
-      activeCount
+      resolvedIncidentsThisWeek,
+      activeCount,
+      countsCompletedToday,
+      receivedLast30,
+      receivedWithDifferencesLast30
     ] = await Promise.all([
       this.prisma.supplyRequest.count({ where: { locationId, status: "PENDING" } }),
+      this.prisma.supplyRequest.count({ where: { locationId, status: "PARTIAL" } }),
       this.prisma.transfer.count({
         where: { destinationLocationId: locationId, status: { in: ["DRAFT", "PREPARING"] } }
       }),
@@ -55,17 +66,48 @@ export class OperationsService {
         where: { destinationLocationId: locationId, status: "DELIVERED" }
       }),
       this.prisma.incident.count({ where: { locationId, status: "OPEN" } }),
+      this.prisma.incident.count({
+        where: { locationId, status: "RESOLVED", resolvedAt: { gte: startOfWeek } }
+      }),
       this.prisma.stockCount.findFirst({
         where: { locationId, status: "IN_PROGRESS" },
         include: { _count: { select: { lines: true } }, lines: { select: { status: true } } }
+      }),
+      this.prisma.stockCount.count({
+        where: { locationId, status: "COMPLETED", completedAt: { gte: startOfToday } }
+      }),
+      this.prisma.transfer.count({
+        where: {
+          destinationLocationId: locationId,
+          status: { in: ["RECEIVED", "RECEIVED_WITH_DIFFERENCES"] },
+          receivedAt: { gte: startOfWeek }
+        }
+      }),
+      this.prisma.transfer.count({
+        where: {
+          destinationLocationId: locationId,
+          status: "RECEIVED_WITH_DIFFERENCES",
+          receivedAt: { gte: startOfWeek }
+        }
       })
     ]);
+
+    const accuracyRate = receivedLast30 > 0
+      ? Math.round(((receivedLast30 - receivedWithDifferencesLast30) / receivedLast30) * 100)
+      : 100;
+
     return {
       pendingRequests,
+      partialRequests,
       preparingTransfers,
       inRoute,
       pendingReceipts,
       openIncidents,
+      resolvedIncidentsThisWeek,
+      countsCompletedToday,
+      accuracyRate,
+      receivedLast30,
+      receivedWithDifferencesLast30,
       activeCount: activeCount
         ? {
             id: activeCount.id,

@@ -16,10 +16,16 @@ export type Product = {
 };
 export type Dashboard = {
   pendingRequests: number;
+  partialRequests: number;
   preparingTransfers: number;
   inRoute: number;
   pendingReceipts: number;
   openIncidents: number;
+  resolvedIncidentsThisWeek: number;
+  countsCompletedToday: number;
+  accuracyRate: number;
+  receivedLast30: number;
+  receivedWithDifferencesLast30: number;
   activeCount: { id: string; total: number; completed: number } | null;
 };
 export type InventoryRow = {

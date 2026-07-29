@@ -9,6 +9,7 @@ import {
   IconCircleCheck,
   IconClipboardCheck,
   IconFileAnalytics,
+  IconGauge,
   IconPackageExport,
   IconPencil,
   IconPower,
@@ -57,6 +58,35 @@ function Status({ value }: { value: string }) {
   return <span className={`badge ${className}`}>{value.replaceAll("_", " ")}</span>;
 }
 
+function AccuracyGauge({ rate }: { rate: number }) {
+  const color = rate >= 95 ? "var(--success)" : rate >= 85 ? "var(--warning)" : "var(--danger)";
+  const circumference = 2 * Math.PI * 42;
+  const offset = circumference - (rate / 100) * circumference;
+  return (
+    <div className="accuracy-gauge">
+      <svg viewBox="0 0 100 100" width="96" height="96">
+        <circle cx="50" cy="50" r="42" fill="none" stroke="var(--gray-100)" strokeWidth="10" />
+        <circle
+          cx="50"
+          cy="50"
+          r="42"
+          fill="none"
+          stroke={color}
+          strokeWidth="10"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          transform="rotate(-90 50 50)"
+        />
+      </svg>
+      <div className="accuracy-value">
+        <strong>{rate}%</strong>
+        <small>precisión</small>
+      </div>
+    </div>
+  );
+}
+
 export function DashboardPage() {
   const { user, locationId } = useApp();
   const { data, isLoading } = useQuery({
@@ -71,6 +101,13 @@ export function DashboardPage() {
     ["Incidencias abiertas", data?.openIncidents ?? 0, IconAlertTriangle, "red"]
   ] as const;
 
+  const weekly = [
+    ["Conteos completados hoy", data?.countsCompletedToday ?? 0, IconClipboardCheck],
+    ["Solicitudes parciales", data?.partialRequests ?? 0, IconReceipt],
+    ["Incidencias resueltas (7 días)", data?.resolvedIncidentsThisWeek ?? 0, IconCircleCheck],
+    ["Surtidos recibidos (7 días)", data?.receivedLast30 ?? 0, IconTruck]
+  ] as const;
+
   return (
     <Page icon={<IconBuildingStore />} title={`Hola, ${user.name.split(" ")[0]}`} subtitle="Esto requiere atención hoy.">
       <section className="kpi-grid">
@@ -81,6 +118,35 @@ export function DashboardPage() {
           </article>
         ))}
       </section>
+
+      <section className="dashboard-secondary">
+        <div className="panel accuracy-panel">
+          <div>
+            <span className="eyebrow">PRECISIÓN DE SURTIDOS</span>
+            <h2>Últimos 7 días</h2>
+            <p className="muted">
+              {data?.receivedWithDifferencesLast30 ?? 0} de {data?.receivedLast30 ?? 0} surtidos con diferencias.
+            </p>
+          </div>
+          <AccuracyGauge rate={data?.accuracyRate ?? 100} />
+        </div>
+
+        <div className="panel weekly-summary">
+          <span className="eyebrow">RESUMEN OPERATIVO</span>
+          <div className="weekly-grid">
+            {weekly.map(([label, value, Icon]) => (
+              <div className="weekly-item" key={label}>
+                <Icon size={18} />
+                <div>
+                  <strong>{isLoading ? "—" : value}</strong>
+                  <span>{label}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <section className="panel attention-panel">
         <div>
           <span className="eyebrow">ACCIÓN RÁPIDA</span>
@@ -738,6 +804,14 @@ export function ReportsPage() {
   return (
     <Page icon={<IconFileAnalytics />} title="Reportes" subtitle="Resumen operativo derivado del backend">
       <section className="kpi-grid"><Kpi label="Solicitudes pendientes" value={data?.pendingRequests ?? 0} icon={<IconReceipt />} color="blue" /><Kpi label="En ruta" value={data?.inRoute ?? 0} icon={<IconTruck />} color="green" /><Kpi label="Recepciones pendientes" value={data?.pendingReceipts ?? 0} icon={<IconChecklist />} color="orange" /><Kpi label="Incidencias abiertas" value={data?.openIncidents ?? 0} icon={<IconAlertTriangle />} color="red" /></section>
+      <section className="panel accuracy-panel">
+        <div>
+          <span className="eyebrow">PRECISIÓN DE SURTIDOS</span>
+          <h2>Últimos 7 días</h2>
+          <p className="muted">{data?.receivedWithDifferencesLast30 ?? 0} de {data?.receivedLast30 ?? 0} surtidos con diferencias · {data?.resolvedIncidentsThisWeek ?? 0} incidencias resueltas esta semana.</p>
+        </div>
+        <AccuracyGauge rate={data?.accuracyRate ?? 100} />
+      </section>
     </Page>
   );
 }
