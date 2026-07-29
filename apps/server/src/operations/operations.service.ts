@@ -143,7 +143,8 @@ export class OperationsService {
     lineId: string,
     quantity: string,
     version: number,
-    clientMutationId: string
+    clientMutationId: string,
+    notes?: string
   ) {
     return this.prisma.$transaction(async (tx) => {
       const line = await tx.stockCountLine.findUnique({
@@ -167,6 +168,7 @@ export class OperationsService {
           countedAt: new Date(),
           countedByUserId: user.id,
           status: "COUNTED",
+          countNotes: notes,
           version: { increment: 1 }
         }
       });
@@ -179,6 +181,39 @@ export class OperationsService {
       });
       return tx.stockCountLine.findUnique({ where: { id: lineId } });
     });
+  }
+
+  async preCompleteCount(user: AuthUser, id: string) {
+    const count = await this.prisma.stockCount.findUnique({
+      where: { id },
+      include: { lines: { include: { product: true } } }
+    });
+    if (!count) throw new NotFoundException("Conteo no encontrado");
+    this.assertLocation(user, count.locationId);
+
+    if (count.status !== "IN_PROGRESS") {
+      throw new ConflictException("El conteo ya fue procesado");
+    }
+
+    const pending = count.lines.filter((line) => line.countedQuantity === null);
+    const adjustments = count.lines
+      .filter((line) => line.countedQuantity !== null)
+      .map((line) => {
+        const delta = countAdjustment(line.snapshotQuantity, line.countedQuantity!);
+        return {
+          productId: line.productId,
+          productName: line.product.name,
+          delta,
+          newBalance: line.snapshotQuantity.plus(delta)
+        };
+      })
+      .filter((adj) => !adj.delta.isZero());
+
+    return {
+      valid: pending.length === 0,
+      adjustments,
+      issues: pending.map((line) => `Producto ${line.product.name} aún no contado`)
+    };
   }
 
   async completeCount(user: AuthUser, id: string, key: string) {
@@ -380,6 +415,41 @@ export class OperationsService {
     });
   }
 
+  async preReceiveTransfer(user: AuthUser, id: string) {
+    const transfer = await this.prisma.transfer.findUnique({
+      where: { id },
+      include: { lines: { include: { product: true } } }
+    });
+    if (!transfer) throw new NotFoundException("Surtido no encontrado");
+    this.assertLocation(user, transfer.destinationLocationId);
+
+    if (transfer.status !== "DELIVERED") {
+      throw new ConflictException("El surtido no está listo para recepción");
+    }
+
+    const incidents: Array<{
+      type: "DAMAGED_PRODUCT" | "RECEPTION_DIFFERENCE";
+      productId: string;
+      productName: string;
+      difference?: number;
+    }> = [];
+
+    return {
+      transferId: transfer.id,
+      lines: transfer.lines.map((line) => ({
+        lineId: line.id,
+        productId: line.productId,
+        productName: line.product.name,
+        sentQuantity: line.sentQuantity.toNumber(),
+        status: line.receptionStatus
+      })),
+      preconditions: {
+        allLinesPresent: transfer.lines.length > 0,
+        statusValid: transfer.status === "DELIVERED"
+      }
+    };
+  }
+
   async receiveTransfer(
     user: AuthUser,
     id: string,
@@ -446,6 +516,7 @@ export class OperationsService {
               transferLineId: line.id,
               productId: line.productId,
               description: input.reason || input.notes || "Diferencia detectada en recepción",
+              quantityDifference: difference,
               reportedByUserId: user.id
             }
           });

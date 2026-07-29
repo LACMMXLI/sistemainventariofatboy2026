@@ -36,6 +36,7 @@ export type CountLine = {
   productId: string;
   snapshotQuantity: string;
   countedQuantity: string | null;
+  countNotes?: string | null;
   status: "PENDING" | "COUNTED";
   version: number;
   product: Product;
@@ -78,6 +79,7 @@ export type Incident = {
   id: string;
   type: string;
   description: string;
+  quantityDifference?: string | null;
   status: string;
   createdAt: string;
   location: Location;

@@ -264,6 +264,7 @@ model StockCountLine {
   status                 CountLineStatus   @default(PENDING)
   movementVersionAtCount Int
   version                Int               @default(0)
+  countNotes             String?
   createdAt              DateTime          @default(now())
   updatedAt              DateTime          @updatedAt
   stockCount             StockCount        @relation(fields: [stockCountId], references: [id])
@@ -360,24 +361,25 @@ model TransferLine {
 }
 
 model Incident {
-  id               String         @id @default(cuid())
-  type             IncidentType
-  locationId       String
-  transferId       String?
-  transferLineId   String?
-  productId        String?
-  description      String
-  status           IncidentStatus @default(OPEN)
-  reportedByUserId String
-  resolvedByUserId String?
-  createdAt        DateTime       @default(now())
-  resolvedAt       DateTime?
-  location         Location       @relation(fields: [locationId], references: [id])
-  transfer         Transfer?      @relation(fields: [transferId], references: [id])
-  transferLine     TransferLine?  @relation(fields: [transferLineId], references: [id])
-  product          Product?       @relation(fields: [productId], references: [id])
-  reportedBy       User           @relation("IncidentReportedBy", fields: [reportedByUserId], references: [id])
-  resolvedBy       User?          @relation("IncidentResolvedBy", fields: [resolvedByUserId], references: [id])
+  id                  String         @id @default(cuid())
+  type                IncidentType
+  locationId          String
+  transferId          String?
+  transferLineId      String?
+  productId           String?
+  description         String
+  quantityDifference  Decimal?       @db.Decimal(18, 4)
+  status              IncidentStatus @default(OPEN)
+  reportedByUserId    String
+  resolvedByUserId    String?
+  createdAt           DateTime       @default(now())
+  resolvedAt          DateTime?
+  location            Location       @relation(fields: [locationId], references: [id])
+  transfer            Transfer?      @relation(fields: [transferId], references: [id])
+  transferLine        TransferLine?  @relation(fields: [transferLineId], references: [id])
+  product             Product?       @relation(fields: [productId], references: [id])
+  reportedBy          User           @relation("IncidentReportedBy", fields: [reportedByUserId], references: [id])
+  resolvedBy          User?          @relation("IncidentResolvedBy", fields: [resolvedByUserId], references: [id])
 }
 
 model AuditLog {

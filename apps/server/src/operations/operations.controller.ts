@@ -47,7 +47,7 @@ export class OperationsController {
     @Req() request: AuthRequest,
     @Param("id") id: string,
     @Param("lineId") lineId: string,
-    @Body() body: { countedQuantity: string; version: number; clientMutationId: string }
+    @Body() body: { countedQuantity: string; version: number; clientMutationId: string; notes?: string }
   ) {
     return this.operations.updateCountLine(
       request.user,
@@ -55,8 +55,17 @@ export class OperationsController {
       lineId,
       quantitySchema.parse(body.countedQuantity),
       body.version,
-      body.clientMutationId
+      body.clientMutationId,
+      body.notes
     );
+  }
+
+  @Get("counts/:id/validate")
+  preCompleteCount(
+    @Req() request: AuthRequest,
+    @Param("id") id: string
+  ) {
+    return this.operations.preCompleteCount(request.user, id);
   }
 
   @Post("counts/:id/complete")
@@ -153,6 +162,14 @@ export class OperationsController {
   @Roles("SYSTEM_OWNER", "DRIVER")
   deliver(@Req() request: AuthRequest, @Param("id") id: string) {
     return this.operations.driverTransition(request.user, id, "deliver");
+  }
+
+  @Get("transfers/:id/pre-receive")
+  preReceiveTransfer(
+    @Req() request: AuthRequest,
+    @Param("id") id: string
+  ) {
+    return this.operations.preReceiveTransfer(request.user, id);
   }
 
   @Post("transfers/:id/receive")

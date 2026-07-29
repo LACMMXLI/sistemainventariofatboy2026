@@ -281,9 +281,15 @@ export function CountCapturePage() {
   const client = useQueryClient();
   const [filter, setFilter] = useState<"ALL" | "PENDING" | "COUNTED">("ALL");
   const [pendingOffline, setPendingOffline] = useState(0);
+  const [showValidation, setShowValidation] = useState(false);
   const { data: count } = useQuery({
     queryKey: ["count", id],
     queryFn: () => api.get<StockCount>(`/counts/${id}`)
+  });
+  const { data: validation } = useQuery({
+    queryKey: ["count-validation", id],
+    queryFn: () => api.get<any>(`/counts/${id}/validate`),
+    enabled: showValidation
   });
 
   async function syncDrafts() {
@@ -321,6 +327,8 @@ export function CountCapturePage() {
   const captured = count.lines.filter((line) => line.status === "COUNTED").length;
   const filtered = count.lines.filter((line) => filter === "ALL" || line.status === filter);
   const progress = Math.round((captured / count.lines.length) * 100);
+  const allCaptured = captured === count.lines.length;
+
   return (
     <Page icon={<IconClipboardCheck />} title="Conteo de inventario" subtitle={count.location.name}>
       <section className="count-summary">
@@ -335,16 +343,50 @@ export function CountCapturePage() {
         {filtered.map((line) => <CountInput key={line.id} countId={id} line={line} onSaved={() => void client.invalidateQueries({ queryKey: ["count", id] })} onQueued={() => setPendingOffline((value) => value + 1)} />)}
       </section>
       <div className="bottom-action">
-        <div><strong>{captured === count.lines.length ? "Conteo listo para revisar" : `${count.lines.length - captured} productos pendientes`}</strong><small>La confirmación requiere conexión.</small></div>
-        <button className="button primary" disabled={captured !== count.lines.length || pendingOffline > 0 || !navigator.onLine || complete.isPending} onClick={() => complete.mutate()}>Confirmar conteo</button>
+        <div><strong>{allCaptured ? "Conteo listo para revisar" : `${count.lines.length - captured} productos pendientes`}</strong><small>La confirmación requiere conexión.</small></div>
+        <button className="button primary" disabled={!allCaptured || pendingOffline > 0 || !navigator.onLine} onClick={() => setShowValidation(true)}>Confirmar conteo</button>
       </div>
-      {complete.error && <div className="form-error">{complete.error.message}</div>}
+      {showValidation && validation && (
+        <div className="modal-overlay" onClick={() => setShowValidation(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{validation.valid ? "Resumen del conteo" : "Errores detectados"}</h2>
+              <button className="icon-button" onClick={() => setShowValidation(false)}><IconX /></button>
+            </div>
+            {!validation.valid && validation.issues.length > 0 && (
+              <div className="form-error">{validation.issues.map((issue: string) => <div key={issue}>{issue}</div>)}</div>
+            )}
+            {validation.adjustments.length > 0 && (
+              <table className="adjustments-table">
+                <thead><tr><th>Producto</th><th>Diferencia</th><th>Stock nuevo</th></tr></thead>
+                <tbody>
+                  {validation.adjustments.map((adj: any) => (
+                    <tr key={adj.productId}>
+                      <td>{adj.productName}</td>
+                      <td className={adj.delta.startsWith('-') ? 'negative' : 'positive'}>{adj.delta}</td>
+                      <td>{quantity(adj.newBalance)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <div className="modal-actions">
+              <button className="button" onClick={() => setShowValidation(false)}>Cancelar</button>
+              <button className="button primary" disabled={!validation.valid || complete.isPending} onClick={() => complete.mutate()}>
+                {complete.isPending ? "Procesando..." : "Confirmar"}
+              </button>
+            </div>
+            {complete.error && <div className="form-error">{complete.error.message}</div>}
+          </div>
+        </div>
+      )}
     </Page>
   );
 }
 
 function CountInput({ countId, line, onSaved, onQueued }: { countId: string; line: CountLine; onSaved: () => void; onQueued: () => void }) {
   const [value, setValue] = useState(line.countedQuantity ?? "");
+  const [notes, setNotes] = useState(line.countNotes ?? "");
   const [state, setState] = useState<"idle" | "saving" | "saved" | "queued">("idle");
 
   async function save() {
@@ -354,6 +396,7 @@ function CountInput({ countId, line, onSaved, onQueued }: { countId: string; lin
       countId,
       lineId: line.id,
       countedQuantity: value,
+      notes: notes || undefined,
       version: line.version,
       clientMutationId: crypto.randomUUID(),
       createdAt: Date.now()
@@ -375,10 +418,20 @@ function CountInput({ countId, line, onSaved, onQueued }: { countId: string; lin
     }
   }
 
+  const delta = line.countedQuantity ? Number(line.countedQuantity) - Number(line.snapshotQuantity) : null;
+  const deltaClass = delta === null ? "" : delta === 0 ? "neutral" : delta > 0 ? "positive" : "negative";
+
   return (
     <article className="count-row">
-      <div><strong>{line.product.name}</strong><small>Unidad: {line.product.unit.symbol}</small></div>
-      <label><span className="sr-only">Cantidad de {line.product.name}</span><input inputMode="decimal" type="number" min="0" step={line.product.unit.allowDecimals ? "0.01" : "1"} value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => void save()} /></label>
+      <div>
+        <strong>{line.product.name}</strong>
+        <small>Esperado: {quantity(line.snapshotQuantity)} {line.product.unit.symbol}</small>
+      </div>
+      <div className="count-input-group">
+        <label><span className="sr-only">Cantidad de {line.product.name}</span><input inputMode="decimal" type="number" min="0" step={line.product.unit.allowDecimals ? "0.01" : "1"} value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => void save()} /></label>
+        {delta !== null && <span className={`delta ${deltaClass}`}>{delta > 0 ? "+" : ""}{quantity(delta)}</span>}
+      </div>
+      {notes && <small className="count-notes">{notes}</small>}
       <span className={`save-indicator ${state}`}>{state === "saving" ? "Guardando…" : state === "queued" ? "Pendiente" : value !== "" ? <><IconCircleCheck size={18} />Guardado</> : "Pendiente"}</span>
     </article>
   );
