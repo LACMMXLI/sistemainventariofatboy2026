@@ -186,9 +186,12 @@ export function ProductsPage() {
   const { data: categories = [] } = useQuery({ queryKey: ["categories"], queryFn: () => api.get<Category[]>("/categories") });
   const { data: units = [] } = useQuery({ queryKey: ["units"], queryFn: () => api.get<Unit[]>("/units") });
   const create = useMutation({
-    mutationFn: (body: object) => editing
-      ? api.patch(`/products/${editing.id}`, body)
-      : api.post("/products", body),
+    mutationFn: async ({ body, image }: { body: object; image?: File }) => {
+      const product = editing
+        ? await api.patch<Product>(`/products/${editing.id}`, body)
+        : await api.post<Product>("/products", body);
+      return image ? api.upload<Product>(`/products/${product.id}/image`, image) : product;
+    },
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["products"] });
       setShowForm(false);
@@ -211,14 +214,17 @@ export function ProductsPage() {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const image = form.get("image");
     create.mutate({
-      name: String(form.get("name")),
-      sku: String(form.get("sku") || "") || null,
-      categoryId: String(form.get("categoryId")),
-      unitId: String(form.get("unitId")),
-      imageUrl: String(form.get("imageUrl") || "") || null,
-      active: editing?.active ?? true,
-      sortOrder: 0
+      body: {
+        name: String(form.get("name")),
+        sku: String(form.get("sku") || "") || null,
+        categoryId: String(form.get("categoryId")),
+        unitId: String(form.get("unitId")),
+        active: editing?.active ?? true,
+        sortOrder: 0
+      },
+      image: image instanceof File && image.size ? image : undefined
     });
   }
 
@@ -268,7 +274,11 @@ export function ProductsPage() {
                 <label>Categoría<select name="categoryId" required defaultValue={editing?.categoryId ?? ""}><option value="">Selecciona</option>{categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
                 <label>Unidad<select name="unitId" required defaultValue={editing?.unitId ?? ""}><option value="">Selecciona</option>{units.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
               </div>
-              <label>URL de imagen opcional<input name="imageUrl" defaultValue={editing?.imageUrl ?? ""} /></label>
+              <label>
+                Imagen del producto
+                <input name="image" type="file" accept="image/jpeg,image/png,image/webp" />
+                <small>JPG, PNG o WebP; máximo 5 MB.{editing?.imageUrl ? " Déjalo vacío para conservar la actual." : ""}</small>
+              </label>
               {create.error && <div className="form-error">{create.error.message}</div>}
             </div>
             <div className="modal-actions"><button type="button" className="button ghost" onClick={() => setShowForm(false)}>Cancelar</button><button className="button primary" disabled={create.isPending}>Guardar producto</button></div>

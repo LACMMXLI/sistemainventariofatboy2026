@@ -49,6 +49,11 @@ Desplegar el repositorio con Docker Compose y definir en Coolify:
 - `SYSTEM_OWNER_EMAIL`
 - `SYSTEM_OWNER_PASSWORD`
 
+Coolify genera automáticamente `SERVICE_USER_S3` y
+`SERVICE_PASSWORD_64_S3`. El Compose usa esas credenciales para crear un
+MinIO privado, el bucket `product-images` y el volumen persistente
+`object_storage_data`; no deben cambiarse después del primer despliegue.
+
 El dominio debe apuntar al servicio `app`, puerto `3000`. Para probarlo
 localmente:
 
@@ -57,8 +62,10 @@ docker compose up --build
 ```
 
 Al iniciar, la aplicación espera a PostgreSQL, ejecuta las migraciones, crea o
-conserva al dueño y después levanta la API. La salud del contenedor se valida
-en `/api/health`.
+conserva al dueño, espera que exista el bucket de imágenes y después levanta la
+API. La salud del contenedor se valida en `/api/health`. La consola opcional de
+MinIO escucha internamente en el puerto `9001`; no es necesaria para usar las
+imágenes desde la aplicación.
 
 ## Respaldos
 

@@ -13,6 +13,7 @@ import { InventoryService } from "./inventory/inventory.service";
 import { OperationsController } from "./operations/operations.controller";
 import { OperationsService } from "./operations/operations.service";
 import { HealthController } from "./health.controller";
+import { ProductImagesController } from "./product-images.controller";
 
 const jwtSecret = process.env.JWT_SECRET;
 if (process.env.NODE_ENV === "production" && (!jwtSecret || jwtSecret.length < 32)) {
@@ -36,6 +37,7 @@ if (process.env.NODE_ENV === "production" && (!jwtSecret || jwtSecret.length < 3
   controllers: [
     AuthController,
     CatalogController,
+    ProductImagesController,
     InventoryController,
     OperationsController
     ,

@@ -7,7 +7,9 @@ type RequestOptions = RequestInit & { retryAuth?: boolean };
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers = new Headers(options.headers);
-  if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
   const response = await fetch(`/api${path}`, {
     ...options,
@@ -69,5 +71,10 @@ export const api = {
       body: body === undefined ? undefined : JSON.stringify(body)
     }),
   patch: <T>(path: string, body: unknown) =>
-    request<T>(path, { method: "PATCH", body: JSON.stringify(body) })
+    request<T>(path, { method: "PATCH", body: JSON.stringify(body) }),
+  upload: <T>(path: string, image: File) => {
+    const body = new FormData();
+    body.set("image", image);
+    return request<T>(path, { method: "POST", body });
+  }
 };
