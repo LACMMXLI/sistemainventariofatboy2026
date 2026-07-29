@@ -190,6 +190,7 @@ export function ProductsPage() {
       const product = editing
         ? await api.patch<Product>(`/products/${editing.id}`, body)
         : await api.post<Product>("/products", body);
+      if (!editing) setEditing(product);
       return image ? api.upload<Product>(`/products/${product.id}/image`, image) : product;
     },
     onSuccess: () => {
