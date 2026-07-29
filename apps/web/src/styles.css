@@ -655,6 +655,60 @@ select {
   border-bottom-color: var(--primary);
 }
 
+/* Timeline */
+.timeline {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  margin: 12px 0;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+.timeline-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-width: 70px;
+}
+.timeline-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #e5e7eb;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px var(--border);
+  transition: var(--transition);
+}
+.timeline-step.done .timeline-dot {
+  background: var(--success);
+  box-shadow: 0 0 0 1px var(--success);
+}
+.timeline-step.active .timeline-dot {
+  background: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+  animation: pulse 2s ease-in-out infinite;
+}
+.timeline-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.2;
+}
+.timeline-step.done .timeline-label {
+  color: var(--success);
+}
+.timeline-step.active .timeline-label {
+  color: var(--primary);
+  font-weight: 700;
+}
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2); }
+  50% { box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.1); }
+}
+
 @media (max-width: 767px) {
   body { background: #f8fafc; }
   .app-shell { display: block; padding-bottom: 72px; }

@@ -347,16 +347,63 @@ export class OperationsService {
     });
   }
 
+  async checkAvailability(
+    user: AuthUser,
+    sourceLocationId: string,
+    items: Array<{ productId: string; quantity: string }>
+  ) {
+    const balances = await this.prisma.inventoryBalance.findMany({
+      where: {
+        locationId: sourceLocationId,
+        productId: { in: items.map((i) => i.productId) }
+      },
+      include: { product: true }
+    });
+
+    const byProduct = new Map(balances.map((b) => [b.productId, b]));
+    return items.map((item) => {
+      const balance = byProduct.get(item.productId);
+      const available = balance?.quantity ?? new Prisma.Decimal(0);
+      const requested = new Prisma.Decimal(item.quantity);
+      return {
+        productId: item.productId,
+        productName: balance?.product.name ?? "Producto desconocido",
+        available: available.toNumber(),
+        requested: requested.toNumber(),
+        isAvailable: available.greaterThanOrEqualTo(requested)
+      };
+    });
+  }
+
   async createTransfer(
     user: AuthUser,
     destinationLocationId: string,
+    sourceLocationId: string,
     lines: TransferLineInput[],
     notes?: string
   ) {
     if (!["SYSTEM_OWNER", "ADMIN"].includes(user.role)) throw new ForbiddenException();
+
+    // Validar disponibilidad
+    if (sourceLocationId) {
+      const availability = await this.checkAvailability(
+        user,
+        sourceLocationId,
+        lines.map((l) => ({ productId: l.productId, quantity: l.sentQuantity }))
+      );
+      const unavailable = availability.filter((a) => !a.isAvailable);
+      if (unavailable.length > 0) {
+        throw new BadRequestException({
+          message: "Productos sin suficiente disponibilidad",
+          items: unavailable
+        });
+      }
+    }
+
     return this.prisma.transfer.create({
       data: {
         destinationLocationId,
+        sourceLocationId,
         preparedByUserId: user.id,
         status: "PREPARING",
         preparedAt: new Date(),
@@ -369,7 +416,7 @@ export class OperationsService {
           }))
         }
       },
-      include: { lines: true }
+      include: { lines: { include: { product: true } } }
     });
   }
 

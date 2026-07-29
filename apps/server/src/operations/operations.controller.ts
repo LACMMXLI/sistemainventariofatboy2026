@@ -114,11 +114,22 @@ export class OperationsController {
     return this.operations.listTransfers(request.user, locationId);
   }
 
+  @Get("inventory/check-availability")
+  checkAvailability(
+    @Req() request: AuthRequest,
+    @Query("locationId") locationId: string,
+    @Query("items") itemsJson?: string
+  ) {
+    const items = itemsJson ? JSON.parse(itemsJson) : [];
+    return this.operations.checkAvailability(request.user, locationId, items);
+  }
+
   @Post("transfers")
   @Roles("SYSTEM_OWNER", "ADMIN")
   createTransfer(
     @Req() request: AuthRequest,
     @Body() body: {
+      sourceLocationId?: string;
       destinationLocationId: string;
       notes?: string;
       lines: Array<{
@@ -131,6 +142,7 @@ export class OperationsController {
     return this.operations.createTransfer(
       request.user,
       body.destinationLocationId,
+      body.sourceLocationId || "",
       body.lines,
       body.notes
     );

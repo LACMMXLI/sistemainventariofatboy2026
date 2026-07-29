@@ -482,11 +482,28 @@ export function RequestsPage() {
   );
 }
 
+function TransferTimeline({ status }: { status: string }) {
+  const steps = ["PREPARING", "ASSIGNED", "IN_ROUTE", "DELIVERED", "RECEIVED"];
+  const currentIndex = steps.indexOf(status);
+  const isError = status.includes("CANCEL");
+  return (
+    <div className="timeline">
+      {steps.map((step, idx) => (
+        <div key={step} className={`timeline-step ${idx <= currentIndex && !isError ? "done" : ""} ${idx === currentIndex && !isError ? "active" : ""}`}>
+          <div className="timeline-dot" />
+          <span className="timeline-label">{step.replace(/_/g, " ")}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function TransfersPage({ driverMode = false }: { driverMode?: boolean }) {
   const { user, locationId, locations } = useApp();
   const client = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [destination, setDestination] = useState(locationId);
+  const [source, setSource] = useState(locationId);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const { data: transfers = [] } = useQuery({ queryKey: ["transfers", driverMode, locationId], queryFn: () => api.get<Transfer[]>(withLocation("/transfers", locationId)) });
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: () => api.get<Product[]>("/products") });
@@ -496,12 +513,13 @@ export function TransfersPage({ driverMode = false }: { driverMode?: boolean }) 
     enabled: ["SYSTEM_OWNER", "ADMIN"].includes(user.role)
   });
   const create = useMutation({
-    mutationFn: () => api.post("/transfers", { destinationLocationId: destination, lines: Object.entries(amounts).filter(([, value]) => Number(value) > 0).map(([productId, sentQuantity]) => ({ productId, sentQuantity })) }),
+    mutationFn: () => api.post("/transfers", { sourceLocationId: source, destinationLocationId: destination, lines: Object.entries(amounts).filter(([, value]) => Number(value) > 0).map(([productId, sentQuantity]) => ({ productId, sentQuantity })) }),
     onSuccess: () => {
       setCreating(false);
       setAmounts({});
       void client.invalidateQueries({ queryKey: ["transfers"] });
-    }
+    },
+    onError: (error: any) => console.error("Error creating transfer:", error)
   });
   const transition = useMutation({
     mutationFn: ({ id, action }: { id: string; action: "start" | "deliver" }) => api.post(`/transfers/${id}/${action}`),
@@ -514,8 +532,8 @@ export function TransfersPage({ driverMode = false }: { driverMode?: boolean }) 
   });
   return (
     <Page icon={<IconTruck />} title={driverMode || user.role === "DRIVER" ? "Mis entregas" : "Surtidos"} subtitle={driverMode || user.role === "DRIVER" ? "Entregas asignadas a tu usuario" : "Preparación y seguimiento de producto"} action={!driverMode && !["DRIVER", "MANAGER"].includes(user.role) && <button className="button primary" onClick={() => setCreating(true)}><IconPlus size={19} />Crear surtido</button>}>
-      {creating && <section className="panel request-builder"><div className="section-heading"><h2>Nuevo surtido</h2><button className="icon-button" onClick={() => setCreating(false)}><IconX /></button></div><label>Destino<select value={destination} onChange={(event) => setDestination(event.target.value)}><option value="">Selecciona</option>{locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>{products.map((product) => <label className="request-line" key={product.id}><span><strong>{product.name}</strong><small>{product.unit.symbol}</small></span><input type="number" min="0" inputMode="decimal" placeholder="0" value={amounts[product.id] ?? ""} onChange={(event) => setAmounts({ ...amounts, [product.id]: event.target.value })} /></label>)}<div className="sticky-submit"><button className="button primary" disabled={!destination || !Object.values(amounts).some((value) => Number(value) > 0)} onClick={() => create.mutate()}>Preparar surtido</button></div></section>}
-      <section className="delivery-grid">{transfers.length ? transfers.map((transfer) => <article className="delivery-card" key={transfer.id}><div className="delivery-heading"><div><span className="eyebrow">{transfer.destination.name}</span><h2>Surtido #{transfer.id.slice(-6).toUpperCase()}</h2></div><Status value={transfer.status} /></div><ul>{transfer.lines.map((line) => <li key={line.id}><span>{line.product.name}</span><strong>{quantity(line.sentQuantity)} {line.product.unit.symbol}</strong></li>)}</ul>{transfer.driver && <p className="muted">Repartidor: {transfer.driver.name}</p>}{["SYSTEM_OWNER", "ADMIN"].includes(user.role) && transfer.status === "PREPARING" && <label className="driver-select">Asignar repartidor<select defaultValue="" onChange={(event) => event.target.value && assign.mutate({ id: transfer.id, driverUserId: event.target.value })}><option value="">Selecciona</option>{users.filter((item) => item.role === "DRIVER" && item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}{user.role === "DRIVER" && transfer.status === "ASSIGNED" && <button className="button primary wide" onClick={() => transition.mutate({ id: transfer.id, action: "start" })}>Iniciar reparto</button>}{user.role === "DRIVER" && transfer.status === "IN_ROUTE" && <button className="button primary wide" onClick={() => transition.mutate({ id: transfer.id, action: "deliver" })}>Marcar entrega</button>}</article>) : <Empty>No hay entregas en esta vista.</Empty>}</section>
+      {creating && <section className="panel request-builder"><div className="section-heading"><div><h2>Nuevo surtido</h2><p>Selecciona origen y destino, luego agrega productos.</p></div><button className="icon-button" onClick={() => setCreating(false)}><IconX /></button></div><div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px"}}><label>Origen<select value={source} onChange={(event) => setSource(event.target.value)}><option value="">Selecciona</option>{locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Destino<select value={destination} onChange={(event) => setDestination(event.target.value)}><option value="">Selecciona</option>{locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>{products.map((product) => <label className="request-line" key={product.id}><span><strong>{product.name}</strong><small>{product.unit.symbol}</small></span><input type="number" min="0" inputMode="decimal" placeholder="0" value={amounts[product.id] ?? ""} onChange={(event) => setAmounts({ ...amounts, [product.id]: event.target.value })} /></label>)}<div className="sticky-submit"><button className="button primary" disabled={!source || !destination || !Object.values(amounts).some((value) => Number(value) > 0) || create.isPending} onClick={() => create.mutate()}>{create.isPending ? "Preparando..." : "Preparar surtido"}</button></div>{create.error && <div className="form-error">{typeof create.error.message === 'string' ? create.error.message : JSON.stringify(create.error.message)}</div>}</section>}
+      <section className="delivery-grid">{transfers.length ? transfers.map((transfer) => <article className="delivery-card" key={transfer.id}><div className="delivery-heading"><div><span className="eyebrow">{transfer.destination.name}</span><h2>Surtido #{transfer.id.slice(-6).toUpperCase()}</h2></div><Status value={transfer.status} /></div><TransferTimeline status={transfer.status} /><ul>{transfer.lines.map((line) => <li key={line.id}><span>{line.product.name}</span><strong>{quantity(line.sentQuantity)} {line.product.unit.symbol}</strong></li>)}</ul>{transfer.driver && <p className="muted">🚗 {transfer.driver.name}</p>}{["SYSTEM_OWNER", "ADMIN"].includes(user.role) && transfer.status === "PREPARING" && <label className="driver-select">Asignar repartidor<select defaultValue="" onChange={(event) => event.target.value && assign.mutate({ id: transfer.id, driverUserId: event.target.value })}><option value="">Selecciona</option>{users.filter((item) => item.role === "DRIVER" && item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}{user.role === "DRIVER" && transfer.status === "ASSIGNED" && <button className="button primary wide" onClick={() => transition.mutate({ id: transfer.id, action: "start" })}>Iniciar reparto</button>}{user.role === "DRIVER" && transfer.status === "IN_ROUTE" && <button className="button primary wide" onClick={() => transition.mutate({ id: transfer.id, action: "deliver" })}>Marcar entrega</button>}</article>) : <Empty>No hay entregas en esta vista.</Empty>}</section>
     </Page>
   );
 }
