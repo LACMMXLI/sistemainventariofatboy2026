@@ -543,20 +543,179 @@ export function ReceivingPage() {
   const client = useQueryClient();
   const [selected, setSelected] = useState<Transfer | null>(null);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [showSummary, setShowSummary] = useState(false);
   const { data: transfers = [] } = useQuery({ queryKey: ["transfers", locationId], queryFn: () => api.get<Transfer[]>(withLocation("/transfers", locationId)) });
   const delivered = transfers.filter((transfer) => transfer.status === "DELIVERED");
+
   const receive = useMutation({
-    mutationFn: () => api.post(`/transfers/${selected!.id}/receive`, { lines: selected!.lines.map((line) => ({ lineId: line.id, receivedQuantity: amounts[line.id] ?? line.sentQuantity, reason: Number(amounts[line.id] ?? line.sentQuantity) !== Number(line.sentQuantity) ? "Cantidad recibida diferente" : undefined })) }, crypto.randomUUID()),
+    mutationFn: () => api.post(`/transfers/${selected!.id}/receive`, { lines: selected!.lines.map((line) => ({ lineId: line.id, receivedQuantity: amounts[line.id] ?? line.sentQuantity })) }, crypto.randomUUID()),
     onSuccess: () => {
       setSelected(null);
       setAmounts({});
+      setShowSummary(false);
       void client.invalidateQueries({ queryKey: ["transfers"] });
       void client.invalidateQueries({ queryKey: ["inventory"] });
     }
   });
+
+  const getDifferenceClass = (sent: string, received: string) => {
+    const s = Number(sent), r = Number(received);
+    if (s === r) return "neutral";
+    if (Math.abs(s - r) / s <= 0.02) return "warning";
+    return "danger";
+  };
+
+  const calculateDifferences = () => {
+    if (!selected) return [];
+    return selected.lines
+      .map((line) => {
+        const received = Number(amounts[line.id] ?? line.sentQuantity);
+        const sent = Number(line.sentQuantity);
+        const diff = received - sent;
+        return {
+          productId: line.productId,
+          productName: line.product.name,
+          sent,
+          received,
+          diff,
+          hasDifference: diff !== 0
+        };
+      })
+      .filter((item) => item.hasDifference);
+  };
+
+  const differences = calculateDifferences();
+
   return (
     <Page icon={<IconChecklist />} title="Recepciones" subtitle="Confirma únicamente lo recibido físicamente">
-      {!selected ? <section className="delivery-grid">{delivered.length ? delivered.map((transfer) => <article className="delivery-card" key={transfer.id}><div className="delivery-heading"><div><span className="eyebrow">{transfer.destination.name}</span><h2>Surtido #{transfer.id.slice(-6).toUpperCase()}</h2></div><Status value={transfer.status} /></div><p>{transfer.lines.length} productos por recibir</p><button className="button primary wide" onClick={() => { setSelected(transfer); setAmounts(Object.fromEntries(transfer.lines.map((line) => [line.id, line.sentQuantity]))); }}>Recibir surtido</button></article>) : <Empty>No hay surtidos pendientes de recepción.</Empty>}</section> : <section className="panel request-builder"><div className="section-heading"><div><h2>Recibir surtido</h2><p>{selected.destination.name} · #{selected.id.slice(-6).toUpperCase()}</p></div><button className="icon-button" onClick={() => setSelected(null)}><IconX /></button></div>{selected.lines.map((line) => <label className="reception-line" key={line.id}><span><strong>{line.product.name}</strong><small>Enviado: {quantity(line.sentQuantity)} {line.product.unit.symbol}</small></span><span>Recibido<input type="number" min="0" inputMode="decimal" value={amounts[line.id] ?? ""} onChange={(event) => setAmounts({ ...amounts, [line.id]: event.target.value })} /></span></label>)}<div className="sticky-submit"><button className="button primary" disabled={receive.isPending || Object.values(amounts).some((value) => value === "")} onClick={() => receive.mutate()}>Confirmar recepción</button></div>{receive.error && <div className="form-error">{receive.error.message}</div>}</section>}
+      {!selected ? (
+        <section className="delivery-grid">
+          {delivered.length ? (
+            delivered.map((transfer) => (
+              <article className="delivery-card" key={transfer.id}>
+                <div className="delivery-heading">
+                  <div>
+                    <span className="eyebrow">{transfer.destination.name}</span>
+                    <h2>Surtido #{transfer.id.slice(-6).toUpperCase()}</h2>
+                  </div>
+                  <Status value={transfer.status} />
+                </div>
+                <p>{transfer.lines.length} productos por recibir</p>
+                <button
+                  className="button primary wide"
+                  onClick={() => {
+                    setSelected(transfer);
+                    setAmounts(Object.fromEntries(transfer.lines.map((line) => [line.id, line.sentQuantity])));
+                    setShowSummary(false);
+                  }}
+                >
+                  Recibir surtido
+                </button>
+              </article>
+            ))
+          ) : (
+            <Empty>No hay surtidos pendientes de recepción.</Empty>
+          )}
+        </section>
+      ) : (
+        <section className="panel request-builder">
+          <div className="section-heading">
+            <div>
+              <h2>Recibir surtido</h2>
+              <p>{selected.destination.name} · #{selected.id.slice(-6).toUpperCase()}</p>
+            </div>
+            <button className="icon-button" onClick={() => setSelected(null)}>
+              <IconX />
+            </button>
+          </div>
+          {selected.lines.map((line) => {
+            const sent = Number(line.sentQuantity);
+            const received = Number(amounts[line.id] ?? line.sentQuantity);
+            const diff = received - sent;
+            const diffClass = getDifferenceClass(line.sentQuantity, amounts[line.id] ?? line.sentQuantity);
+            return (
+              <label className="reception-line" key={line.id}>
+                <span>
+                  <strong>{line.product.name}</strong>
+                  <small>Enviado: {quantity(line.sentQuantity)} {line.product.unit.symbol}</small>
+                </span>
+                <span style={{ display: "grid", gap: "6px" }}>
+                  Recibido
+                  <input
+                    type="number"
+                    min="0"
+                    inputMode="decimal"
+                    value={amounts[line.id] ?? ""}
+                    onChange={(event) => setAmounts({ ...amounts, [line.id]: event.target.value })}
+                  />
+                  {diff !== 0 && <span className={`delta ${diffClass}`}>{diff > 0 ? "+" : ""}{quantity(diff)}</span>}
+                </span>
+              </label>
+            );
+          })}
+          {differences.length > 0 && (
+            <div className="warning-box">
+              <strong>⚠️ {differences.length} diferencia(s) detectada(s)</strong>
+              <ul>
+                {differences.map((d) => (
+                  <li key={d.productId}>
+                    {d.productName}: {d.diff > 0 ? "+" : ""}{d.diff} unidades
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="sticky-submit">
+            <button
+              className="button"
+              onClick={() => setShowSummary(true)}
+              disabled={Object.values(amounts).some((value) => value === "")}
+            >
+              Revisar y confirmar
+            </button>
+          </div>
+          {receive.error && <div className="form-error">{receive.error.message}</div>}
+        </section>
+      )}
+      {showSummary && selected && (
+        <div className="modal-overlay" onClick={() => setShowSummary(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Resumen de recepción</h2>
+              <button className="icon-button" onClick={() => setShowSummary(false)}>
+                <IconX />
+              </button>
+            </div>
+            {differences.length > 0 && (
+              <div className="form-error">
+                <strong>Se crearán {differences.length} incidencia(s):</strong>
+                <ul style={{ marginTop: "8px", paddingLeft: "20px" }}>
+                  {differences.map((d) => (
+                    <li key={d.productId}>
+                      {d.productName}: {d.diff > 0 ? "Exceso" : "Falta"} de {Math.abs(d.diff)} unidades
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <p style={{ padding: "0 20px 16px", color: "var(--muted)", fontSize: "0.9rem" }}>
+              {differences.length === 0 ? "✓ Recepción perfecta, sin diferencias" : "Revisa las diferencias antes de confirmar."}
+            </p>
+            <div className="modal-actions">
+              <button className="button" onClick={() => setShowSummary(false)}>
+                Editar
+              </button>
+              <button
+                className="button primary"
+                disabled={receive.isPending}
+                onClick={() => receive.mutate()}
+              >
+                {receive.isPending ? "Procesando..." : "Confirmar recepción"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Page>
   );
 }

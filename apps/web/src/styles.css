@@ -578,6 +578,30 @@ small { color: var(--muted); font-size: 0.875rem; }
 .delta.neutral { background: rgba(102, 115, 138, 0.05); color: var(--muted); }
 .count-notes { display: block; margin-top: 4px; padding: 8px; background: #f8fafc; border-radius: 6px; font-size: 0.85rem; color: var(--muted); }
 
+.warning-box {
+  margin: 16px 0;
+  padding: 12px 14px;
+  border: 1px solid #fecaca;
+  border-left: 4px solid var(--danger);
+  border-radius: 10px;
+  background: #fee2e2;
+  font-size: 0.9rem;
+  color: #991b1b;
+}
+.warning-box strong {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+.warning-box ul {
+  margin: 0;
+  padding-left: 20px;
+  list-style: disc;
+}
+.warning-box li {
+  margin: 4px 0;
+}
+
 /* Form Elements */
 input[type="text"],
 input[type="email"],
