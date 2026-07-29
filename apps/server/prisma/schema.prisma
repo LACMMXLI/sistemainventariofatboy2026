@@ -1,0 +1,409 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  SYSTEM_OWNER
+  ADMIN
+  MANAGER
+  DRIVER
+}
+
+enum LocationType {
+  BRANCH
+  WAREHOUSE
+}
+
+enum MovementType {
+  INITIAL_STOCK
+  COUNT_ADJUSTMENT
+  TRANSFER_IN
+  TRANSFER_OUT
+  MANUAL_ADJUSTMENT
+  REVERSAL
+}
+
+enum CountStatus {
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum CountLineStatus {
+  PENDING
+  COUNTED
+}
+
+enum RequestStatus {
+  DRAFT
+  PENDING
+  PARTIAL
+  COMPLETED
+  CANCELLED
+}
+
+enum TransferStatus {
+  DRAFT
+  PREPARING
+  ASSIGNED
+  IN_ROUTE
+  DELIVERED
+  RECEIVED
+  RECEIVED_WITH_DIFFERENCES
+  CANCELLED
+}
+
+enum ReceptionStatus {
+  PENDING
+  RECEIVED
+  PARTIAL
+  NOT_RECEIVED
+}
+
+enum IncidentType {
+  RECEPTION_DIFFERENCE
+  MISSING_PRODUCT
+  EXCESS_PRODUCT
+  DAMAGED_PRODUCT
+  OTHER
+}
+
+enum IncidentStatus {
+  OPEN
+  RESOLVED
+  CANCELLED
+}
+
+model User {
+  id                 String              @id @default(cuid())
+  name               String
+  email              String              @unique
+  passwordHash       String
+  role               Role
+  locationId         String?
+  active             Boolean             @default(true)
+  hiddenFromAdmin    Boolean             @default(false)
+  authVersion        Int                 @default(1)
+  lastLoginAt        DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  location           Location?           @relation(fields: [locationId], references: [id])
+  sessions           RefreshSession[]
+  startedCounts      StockCount[]         @relation("CountStartedBy")
+  completedCounts    StockCount[]         @relation("CountCompletedBy")
+  countedLines       StockCountLine[]
+  requests           SupplyRequest[]
+  preparedTransfers  Transfer[]           @relation("TransferPreparedBy")
+  drivenTransfers    Transfer[]           @relation("TransferDriver")
+  receivedTransfers  Transfer[]           @relation("TransferReceivedBy")
+  movements          InventoryMovement[]
+  reportedIncidents  Incident[]           @relation("IncidentReportedBy")
+  resolvedIncidents  Incident[]           @relation("IncidentResolvedBy")
+  audits             AuditLog[]
+  idempotencyRecords IdempotencyRecord[]
+}
+
+model RefreshSession {
+  id          String   @id @default(cuid())
+  userId      String
+  tokenHash   String   @unique
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model Location {
+  id                String              @id @default(cuid())
+  name              String
+  code              String              @unique
+  type              LocationType        @default(BRANCH)
+  active            Boolean             @default(true)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  users             User[]
+  products          LocationProduct[]
+  balances          InventoryBalance[]
+  movements         InventoryMovement[]
+  counts            StockCount[]
+  requests          SupplyRequest[]
+  destination       Transfer[]           @relation("TransferDestination")
+  source             Transfer[]           @relation("TransferSource")
+  incidents         Incident[]
+}
+
+model Unit {
+  id            String    @id @default(cuid())
+  name          String    @unique
+  symbol        String
+  allowDecimals Boolean   @default(false)
+  decimalPlaces Int       @default(0)
+  active        Boolean   @default(true)
+  products      Product[]
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  sortOrder Int       @default(0)
+  active    Boolean   @default(true)
+  products  Product[]
+}
+
+model Product {
+  id             String              @id @default(cuid())
+  name           String
+  normalizedName String              @unique
+  sku            String?             @unique
+  categoryId     String
+  unitId         String
+  active         Boolean             @default(true)
+  imageUrl       String?
+  notes          String?
+  sortOrder      Int                 @default(0)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  category       Category            @relation(fields: [categoryId], references: [id])
+  unit           Unit                @relation(fields: [unitId], references: [id])
+  locations      LocationProduct[]
+  balances       InventoryBalance[]
+  movements      InventoryMovement[]
+  countLines     StockCountLine[]
+  requestLines   SupplyRequestLine[]
+  transferLines  TransferLine[]
+  incidents      Incident[]
+
+  @@index([categoryId, active])
+}
+
+model LocationProduct {
+  id         String   @id @default(cuid())
+  locationId String
+  productId  String
+  active     Boolean  @default(true)
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  location   Location @relation(fields: [locationId], references: [id])
+  product    Product  @relation(fields: [productId], references: [id])
+
+  @@unique([locationId, productId])
+  @@index([locationId, active, sortOrder])
+}
+
+model InventoryBalance {
+  id         String   @id @default(cuid())
+  locationId String
+  productId  String
+  quantity   Decimal  @default(0) @db.Decimal(18, 4)
+  version    Int      @default(0)
+  updatedAt  DateTime @updatedAt
+  location   Location @relation(fields: [locationId], references: [id])
+  product    Product  @relation(fields: [productId], references: [id])
+
+  @@unique([locationId, productId])
+}
+
+model InventoryMovement {
+  id                String       @id @default(cuid())
+  locationId        String
+  productId         String
+  type              MovementType
+  quantityDelta     Decimal      @db.Decimal(18, 4)
+  balanceBefore     Decimal      @db.Decimal(18, 4)
+  balanceAfter      Decimal      @db.Decimal(18, 4)
+  referenceType     String
+  referenceId       String
+  referenceLineId   String
+  performedByUserId String
+  notes             String?
+  createdAt         DateTime     @default(now())
+  location          Location     @relation(fields: [locationId], references: [id])
+  product           Product      @relation(fields: [productId], references: [id])
+  performedBy       User         @relation(fields: [performedByUserId], references: [id])
+
+  @@unique([type, referenceLineId])
+  @@index([locationId, productId, createdAt])
+  @@index([referenceType, referenceId])
+}
+
+model StockCount {
+  id                String           @id @default(cuid())
+  locationId        String
+  status            CountStatus      @default(IN_PROGRESS)
+  startedByUserId   String
+  startedAt         DateTime         @default(now())
+  completedByUserId String?
+  completedAt       DateTime?
+  cancelledAt       DateTime?
+  notes             String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  location          Location         @relation(fields: [locationId], references: [id])
+  startedBy         User             @relation("CountStartedBy", fields: [startedByUserId], references: [id])
+  completedBy       User?            @relation("CountCompletedBy", fields: [completedByUserId], references: [id])
+  lines             StockCountLine[]
+
+  @@index([locationId, status])
+}
+
+model StockCountLine {
+  id                     String            @id @default(cuid())
+  stockCountId           String
+  productId              String
+  snapshotQuantity       Decimal           @db.Decimal(18, 4)
+  countedQuantity        Decimal?          @db.Decimal(18, 4)
+  countedAt              DateTime?
+  countedByUserId        String?
+  status                 CountLineStatus   @default(PENDING)
+  movementVersionAtCount Int
+  version                Int               @default(0)
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+  stockCount             StockCount        @relation(fields: [stockCountId], references: [id])
+  product                Product           @relation(fields: [productId], references: [id])
+  countedBy              User?             @relation(fields: [countedByUserId], references: [id])
+  mutations              CountLineMutation[]
+
+  @@unique([stockCountId, productId])
+}
+
+model CountLineMutation {
+  id               String         @id @default(cuid())
+  stockCountLineId String
+  clientMutationId String
+  createdAt        DateTime       @default(now())
+  line             StockCountLine @relation(fields: [stockCountLineId], references: [id], onDelete: Cascade)
+
+  @@unique([stockCountLineId, clientMutationId])
+}
+
+model SupplyRequest {
+  id                String              @id @default(cuid())
+  locationId        String
+  requestedByUserId String
+  status            RequestStatus       @default(DRAFT)
+  notes             String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  completedAt       DateTime?
+  location          Location            @relation(fields: [locationId], references: [id])
+  requestedBy       User                @relation(fields: [requestedByUserId], references: [id])
+  lines             SupplyRequestLine[]
+}
+
+model SupplyRequestLine {
+  id                  String         @id @default(cuid())
+  supplyRequestId     String
+  productId           String
+  requestedQuantity   Decimal        @db.Decimal(18, 4)
+  fulfilledQuantity   Decimal        @default(0) @db.Decimal(18, 4)
+  notes               String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  request             SupplyRequest  @relation(fields: [supplyRequestId], references: [id])
+  product             Product        @relation(fields: [productId], references: [id])
+  transferLines       TransferLine[]
+
+  @@unique([supplyRequestId, productId])
+}
+
+model Transfer {
+  id                    String          @id @default(cuid())
+  destinationLocationId String
+  sourceLocationId      String?
+  status                TransferStatus  @default(DRAFT)
+  preparedByUserId      String
+  driverUserId          String?
+  preparedAt            DateTime?
+  assignedAt            DateTime?
+  departedAt            DateTime?
+  deliveredAt           DateTime?
+  receivedAt            DateTime?
+  receivedByUserId      String?
+  notes                 String?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  destination           Location        @relation("TransferDestination", fields: [destinationLocationId], references: [id])
+  source                Location?       @relation("TransferSource", fields: [sourceLocationId], references: [id])
+  preparedBy            User            @relation("TransferPreparedBy", fields: [preparedByUserId], references: [id])
+  driver                User?           @relation("TransferDriver", fields: [driverUserId], references: [id])
+  receivedBy            User?           @relation("TransferReceivedBy", fields: [receivedByUserId], references: [id])
+  lines                 TransferLine[]
+  incidents             Incident[]
+}
+
+model TransferLine {
+  id                    String             @id @default(cuid())
+  transferId            String
+  productId             String
+  supplyRequestLineId   String?
+  sentQuantity          Decimal            @db.Decimal(18, 4)
+  receivedQuantity      Decimal?           @db.Decimal(18, 4)
+  differenceQuantity    Decimal?           @db.Decimal(18, 4)
+  receptionStatus       ReceptionStatus    @default(PENDING)
+  notes                 String?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  transfer              Transfer           @relation(fields: [transferId], references: [id])
+  product               Product            @relation(fields: [productId], references: [id])
+  supplyRequestLine     SupplyRequestLine? @relation(fields: [supplyRequestLineId], references: [id])
+  incidents             Incident[]
+
+  @@unique([transferId, productId])
+}
+
+model Incident {
+  id               String         @id @default(cuid())
+  type             IncidentType
+  locationId       String
+  transferId       String?
+  transferLineId   String?
+  productId        String?
+  description      String
+  status           IncidentStatus @default(OPEN)
+  reportedByUserId String
+  resolvedByUserId String?
+  createdAt        DateTime       @default(now())
+  resolvedAt       DateTime?
+  location         Location       @relation(fields: [locationId], references: [id])
+  transfer         Transfer?      @relation(fields: [transferId], references: [id])
+  transferLine     TransferLine?  @relation(fields: [transferLineId], references: [id])
+  product          Product?       @relation(fields: [productId], references: [id])
+  reportedBy       User           @relation("IncidentReportedBy", fields: [reportedByUserId], references: [id])
+  resolvedBy       User?          @relation("IncidentResolvedBy", fields: [resolvedByUserId], references: [id])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  action     String
+  entityType String
+  entityId   String
+  beforeData Json?
+  afterData  Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId, createdAt])
+}
+
+model IdempotencyRecord {
+  id        String   @id @default(cuid())
+  userId    String
+  operation String
+  key       String
+  response  Json
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, operation, key])
+}

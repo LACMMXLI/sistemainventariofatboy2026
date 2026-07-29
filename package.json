@@ -1,0 +1,21 @@
+{
+  "name": "fatboy-inventory",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @fatboy/shared && npm run build -w @fatboy/web && npm run build -w @fatboy/server",
+    "dev": "npm run dev -w @fatboy/server",
+    "dev:web": "npm run dev -w @fatboy/web",
+    "test": "npm run test -w @fatboy/server && npm run test -w @fatboy/web",
+    "db:generate": "npm run db:generate -w @fatboy/server",
+    "db:migrate": "npm run db:migrate -w @fatboy/server",
+    "db:seed": "npm run db:seed -w @fatboy/server"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

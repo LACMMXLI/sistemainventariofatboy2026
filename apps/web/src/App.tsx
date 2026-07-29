@@ -1,0 +1,308 @@
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+  type ReactNode
+} from "react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  IconAlertTriangle,
+  IconBox,
+  IconBurger,
+  IconClipboardCheck,
+  IconDashboard,
+  IconFileAnalytics,
+  IconHome,
+  IconLogout,
+  IconPackageExport,
+  IconReceipt,
+  IconSettings,
+  IconTruck,
+  IconUsers,
+  IconBuildingStore,
+  IconBell
+} from "@tabler/icons-react";
+import type { SessionUser } from "@fatboy/shared";
+import { api, login, logout, refreshSession } from "./api";
+import type { Location } from "./types";
+import { AppLink, Router, useRouter } from "./router";
+import {
+  AuditPage,
+  ConfigPage,
+  CountCapturePage,
+  CountsPage,
+  DashboardPage,
+  IncidentsPage,
+  InventoryPage,
+  ProductsPage,
+  ReceivingPage,
+  ReportsPage,
+  RequestsPage,
+  TransfersPage,
+  UsersPage
+} from "./pages";
+
+type AppContextValue = {
+  user: SessionUser;
+  locations: Location[];
+  locationId: string;
+  setLocationId: (id: string) => void;
+  signOut: () => Promise<void>;
+};
+
+const AppContext = createContext<AppContextValue | null>(null);
+export const useApp = () => useContext(AppContext)!;
+
+export function App() {
+  const [user, setUser] = useState<SessionUser | null | undefined>(undefined);
+
+  useEffect(() => {
+    refreshSession().then(setUser);
+  }, []);
+
+  if (user === undefined) return <div className="splash"><IconBurger size={52} /><strong>FATBOY</strong></div>;
+  if (!user) return <LoginPage onLogin={setUser} />;
+
+  return (
+    <AuthenticatedApp
+      user={user}
+      onLogout={async () => {
+        await logout();
+        setUser(null);
+      }}
+    />
+  );
+}
+
+function AuthenticatedApp({
+  user,
+  onLogout
+}: {
+  user: SessionUser;
+  onLogout: () => Promise<void>;
+}) {
+  const { data: locations = [] } = useQuery({
+    queryKey: ["locations"],
+    queryFn: () => api.get<Location[]>("/locations")
+  });
+  const defaultLocation = user.locationId || locations[0]?.id || "";
+  const [locationId, setLocationId] = useState(() => user.locationId || localStorage.getItem("fatboy-location") || "");
+
+  useEffect(() => {
+    if (!locationId && defaultLocation) setLocationId(defaultLocation);
+  }, [defaultLocation, locationId]);
+
+  const value = useMemo(
+    () => ({
+      user,
+      locations,
+      locationId: user.role === "MANAGER" ? user.locationId || "" : locationId,
+      setLocationId: (id: string) => {
+        localStorage.setItem("fatboy-location", id);
+        setLocationId(id);
+      },
+      signOut: onLogout
+    }),
+    [user, locations, locationId, onLogout]
+  );
+
+  return (
+    <AppContext.Provider value={value}>
+      <Router><Shell /></Router>
+    </AppContext.Provider>
+  );
+}
+
+const adminNavigation = [
+  ["/", "Inicio", IconHome],
+  ["/productos", "Productos", IconBox],
+  ["/stock", "Stock", IconFileAnalytics],
+  ["/conteos", "Conteos", IconClipboardCheck],
+  ["/solicitudes", "Solicitudes", IconReceipt],
+  ["/surtidos", "Surtidos", IconPackageExport],
+  ["/repartos", "Repartos", IconTruck],
+  ["/recepciones", "Recepciones", IconDashboard],
+  ["/incidencias", "Incidencias", IconAlertTriangle],
+  ["/reportes", "Reportes", IconFileAnalytics],
+  ["/usuarios", "Usuarios", IconUsers],
+  ["/configuracion", "Configuración", IconSettings]
+] as const;
+
+const managerNavigation = [
+  ["/", "Inicio", IconHome],
+  ["/stock", "Stock", IconFileAnalytics],
+  ["/conteos", "Conteo", IconClipboardCheck],
+  ["/solicitudes", "Solicitudes", IconReceipt],
+  ["/recepciones", "Recibir", IconDashboard],
+  ["/incidencias", "Incidencias", IconAlertTriangle]
+] as const;
+
+const driverNavigation = [
+  ["/repartos", "Entregas", IconTruck],
+  ["/reportes", "Historial", IconFileAnalytics]
+] as const;
+
+function Shell() {
+  const app = useApp();
+  const route = useRouter();
+  const nav =
+    app.user.role === "DRIVER"
+      ? driverNavigation
+      : app.user.role === "MANAGER"
+        ? managerNavigation
+        : adminNavigation;
+  const active = nav.find(([path]) => path === route.path)?.[1] || "FATBOY";
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <img className="brand-image" src="/brand-fatboy.png" alt="FATBOY Sistema de Inventario" />
+        </div>
+        <nav>
+          {nav.map(([path, label, Icon]) => (
+            <AppLink key={path} href={path} active={route.path === path}>
+              <Icon size={21} /><span>{label}</span>
+            </AppLink>
+          ))}
+        </nav>
+        <div className="sidebar-footer">
+          <small>Fatboy Restaurant</small>
+          <span>v1.0.0</span>
+        </div>
+      </aside>
+
+      <header className="topbar">
+        <div className="mobile-brand"><img src="/brand-fatboy.png" alt="FATBOY" /></div>
+        {app.user.role !== "DRIVER" && app.user.role !== "MANAGER" && (
+          <label className="location-picker">
+            <IconBuildingStore size={19} />
+            <span>Sucursal:</span>
+            <select value={app.locationId} onChange={(event) => app.setLocationId(event.target.value)}>
+              <option value="">Vista global</option>
+              {app.locations.map((location) => (
+                <option key={location.id} value={location.id}>{location.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        <button className="icon-button" aria-label="Notificaciones"><IconBell size={21} /></button>
+        <div className="profile">
+          <span className="avatar">{app.user.name.slice(0, 1).toUpperCase()}</span>
+          <span><strong>{app.user.name}</strong><small>{roleLabel(app.user.role)}</small></span>
+        </div>
+        <button className="icon-button" onClick={() => void app.signOut()} aria-label="Cerrar sesión">
+          <IconLogout size={20} />
+        </button>
+      </header>
+
+      <main className="content" aria-label={active}>
+        <RouteContent path={route.path} />
+      </main>
+
+      <nav className="bottom-nav" aria-label="Navegación principal">
+        {nav.slice(0, 5).map(([path, label, Icon]) => (
+          <AppLink key={path} href={path} active={route.path === path}>
+            <Icon size={22} /><span>{label}</span>
+          </AppLink>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+function RouteContent({ path }: { path: string }) {
+  if (path === "/") return <DashboardPage />;
+  if (path === "/productos") return <ProductsPage />;
+  if (path === "/stock") return <InventoryPage />;
+  if (path === "/conteos") return <CountsPage />;
+  if (/^\/conteos\/[^/]+$/.test(path)) return <CountCapturePage />;
+  if (path === "/solicitudes") return <RequestsPage />;
+  if (path === "/surtidos") return <TransfersPage />;
+  if (path === "/repartos") return <TransfersPage driverMode />;
+  if (path === "/recepciones") return <ReceivingPage />;
+  if (path === "/incidencias") return <IncidentsPage />;
+  if (path === "/reportes") return <ReportsPage />;
+  if (path === "/usuarios") return <UsersPage />;
+  if (path === "/auditoria") return <AuditPage />;
+  if (path === "/configuracion") return <ConfigPage />;
+  return <DashboardPage />;
+}
+
+function LoginPage({ onLogin }: { onLogin: (user: SessionUser) => void }) {
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    const data = new FormData(event.currentTarget);
+    try {
+      onLogin(await login(String(data.get("email")), String(data.get("password"))));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "No pudimos iniciar sesión");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="login">
+      <section className="login-brand">
+        <img src="/brand-fatboy.png" alt="FATBOY Sistema de Inventario" />
+        <p>Inventario, conteo y distribución en un solo lugar.</p>
+      </section>
+      <form className="login-card" onSubmit={submit}>
+        <span className="eyebrow">SISTEMA DE INVENTARIO</span>
+        <h2>Bienvenido</h2>
+        <p>Ingresa con tu cuenta asignada.</p>
+        <label>Correo electrónico<input name="email" type="email" autoComplete="email" required /></label>
+        <label>Contraseña<input name="password" type="password" autoComplete="current-password" required minLength={8} /></label>
+        {error && <div className="form-error" role="alert">{error}</div>}
+        <button className="button primary" disabled={busy}>{busy ? "Ingresando…" : "Iniciar sesión"}</button>
+      </form>
+    </main>
+  );
+}
+
+function roleLabel(role: SessionUser["role"]) {
+  return {
+    SYSTEM_OWNER: "Propietario del sistema",
+    ADMIN: "Administrador",
+    MANAGER: "Encargado",
+    DRIVER: "Repartidor"
+  }[role];
+}
+
+export function Page({
+  icon,
+  title,
+  subtitle,
+  action,
+  children
+}: {
+  icon: ReactNode;
+  title: string;
+  subtitle: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <>
+      <div className="page-heading">
+        <span className="page-icon">{icon}</span>
+        <div><h1>{title}</h1><p>{subtitle}</p></div>
+        {action && <div className="page-actions">{action}</div>}
+      </div>
+      {children}
+    </>
+  );
+}
+
+export function Empty({ children }: { children: ReactNode }) {
+  return <div className="empty"><IconBox size={34} /><p>{children}</p></div>;
+}

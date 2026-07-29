@@ -1,0 +1,34 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: fatboy_inventory
+      POSTGRES_USER: fatboy
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fatboy -d fatboy_inventory"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://fatboy:${POSTGRES_PASSWORD}@db:5432/fatboy_inventory
+      JWT_SECRET: ${JWT_SECRET}
+      SYSTEM_OWNER_EMAIL: ${SYSTEM_OWNER_EMAIL}
+      SYSTEM_OWNER_PASSWORD: ${SYSTEM_OWNER_PASSWORD}
+      NODE_ENV: production
+      PORT: 3000
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
