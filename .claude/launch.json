@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "fatboy-api",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "-w", "@fatboy/server"],
+      "port": 3000
+    },
+    {
+      "name": "fatboy-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "-w", "@fatboy/web"],
+      "port": 5173
+    }
+  ]
+}
