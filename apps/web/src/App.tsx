@@ -12,14 +12,18 @@ import {
   IconAlertTriangle,
   IconBox,
   IconBurger,
+  IconCategory,
   IconClipboardCheck,
-  IconDashboard,
+  IconChecklist,
   IconFileAnalytics,
   IconHome,
+  IconLayoutSidebarLeftCollapse,
+  IconLayoutSidebarLeftExpand,
   IconLogout,
   IconPackageExport,
   IconReceipt,
   IconSettings,
+  IconStack2,
   IconTruck,
   IconUsers,
   IconBuildingStore,
@@ -31,6 +35,7 @@ import type { Location } from "./types";
 import { AppLink, Router, useRouter } from "./router";
 import {
   AuditPage,
+  CatalogPage,
   ConfigPage,
   CountCapturePage,
   CountsPage,
@@ -119,12 +124,13 @@ function AuthenticatedApp({
 const adminNavigation = [
   ["/", "Inicio", IconHome],
   ["/productos", "Productos", IconBox],
-  ["/stock", "Stock", IconFileAnalytics],
+  ["/catalogo", "Catálogo", IconCategory],
+  ["/stock", "Stock", IconStack2],
   ["/conteos", "Conteos", IconClipboardCheck],
   ["/solicitudes", "Solicitudes", IconReceipt],
   ["/surtidos", "Surtidos", IconPackageExport],
   ["/repartos", "Repartos", IconTruck],
-  ["/recepciones", "Recepciones", IconDashboard],
+  ["/recepciones", "Recepciones", IconChecklist],
   ["/incidencias", "Incidencias", IconAlertTriangle],
   ["/reportes", "Reportes", IconFileAnalytics],
   ["/usuarios", "Usuarios", IconUsers],
@@ -133,10 +139,10 @@ const adminNavigation = [
 
 const managerNavigation = [
   ["/", "Inicio", IconHome],
-  ["/stock", "Stock", IconFileAnalytics],
+  ["/stock", "Stock", IconStack2],
   ["/conteos", "Conteo", IconClipboardCheck],
   ["/solicitudes", "Solicitudes", IconReceipt],
-  ["/recepciones", "Recibir", IconDashboard],
+  ["/recepciones", "Recibir", IconChecklist],
   ["/incidencias", "Incidencias", IconAlertTriangle]
 ] as const;
 
@@ -148,6 +154,9 @@ const driverNavigation = [
 function Shell() {
   const app = useApp();
   const route = useRouter();
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem("fatboy-sidebar-collapsed") === "1"
+  );
   const nav =
     app.user.role === "DRIVER"
       ? driverNavigation
@@ -156,15 +165,32 @@ function Shell() {
         : adminNavigation;
   const active = nav.find(([path]) => path === route.path)?.[1] || "FATBOY";
 
+  function toggleCollapsed() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("fatboy-sidebar-collapsed", next ? "1" : "0");
+      return next;
+    });
+  }
+
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className={`app-shell${collapsed ? " sidebar-collapsed" : ""}`}>
+      <aside className={`sidebar${collapsed ? " collapsed" : ""}`}>
         <div className="brand">
           <img className="brand-image" src="/brand-fatboy.png" alt="FATBOY Sistema de Inventario" />
         </div>
+        <button
+          type="button"
+          className="sidebar-toggle"
+          onClick={toggleCollapsed}
+          aria-label={collapsed ? "Expandir menú" : "Colapsar menú"}
+          title={collapsed ? "Expandir menú" : "Colapsar menú"}
+        >
+          {collapsed ? <IconLayoutSidebarLeftExpand size={16} /> : <IconLayoutSidebarLeftCollapse size={16} />}
+        </button>
         <nav>
           {nav.map(([path, label, Icon]) => (
-            <AppLink key={path} href={path} active={route.path === path}>
+            <AppLink key={path} href={path} active={route.path === path} title={label}>
               <Icon size={21} /><span>{label}</span>
             </AppLink>
           ))}
@@ -217,6 +243,7 @@ function Shell() {
 function RouteContent({ path }: { path: string }) {
   if (path === "/") return <DashboardPage />;
   if (path === "/productos") return <ProductsPage />;
+  if (path === "/catalogo") return <CatalogPage />;
   if (path === "/stock") return <InventoryPage />;
   if (path === "/conteos") return <CountsPage />;
   if (/^\/conteos\/[^/]+$/.test(path)) return <CountCapturePage />;

@@ -18,6 +18,7 @@ import {
   IconRefresh,
   IconSearch,
   IconSettings,
+  IconStack2,
   IconTruck,
   IconUsers,
   IconX
@@ -44,6 +45,12 @@ const date = (value: string) =>
   new Intl.DateTimeFormat("es-MX", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 const quantity = (value: string | number) =>
   new Intl.NumberFormat("es-MX", { maximumFractionDigits: 4 }).format(Number(value));
+
+const RECEPTION_TOLERANCE_KEY = "fatboy-reception-tolerance";
+function getReceptionTolerance(): number {
+  const stored = Number(localStorage.getItem(RECEPTION_TOLERANCE_KEY));
+  return stored > 0 && stored <= 1 ? stored : 0.02;
+}
 
 function withLocation(path: string, locationId: string) {
   return `${path}${locationId ? `${path.includes("?") ? "&" : "?"}locationId=${locationId}` : ""}`;
@@ -193,7 +200,6 @@ export function ProductsPage() {
       api.post(`/products/${product.id}/${product.active ? "deactivate" : "activate"}`),
     onSuccess: () => void client.invalidateQueries({ queryKey: ["products"] })
   });
-  const active = products.filter((product) => product.active).length;
   const visible = products.filter((product) =>
     product.name.toLocaleLowerCase("es-MX").includes(search.toLocaleLowerCase("es-MX")) &&
     (!categoryId || product.categoryId === categoryId) &&
@@ -223,12 +229,6 @@ export function ProductsPage() {
       subtitle="Catálogo de productos del sistema"
       action={canEdit && <button className="button primary" onClick={() => { setEditing(null); setShowForm(true); }}><IconPlus size={19} />Nuevo producto</button>}
     >
-      <section className="kpi-grid products-kpis">
-        <Kpi label="Total productos" value={products.length} icon={<IconBox />} color="blue" />
-        <Kpi label="Productos activos" value={active} icon={<IconCheck />} color="green" />
-        <Kpi label="Productos inactivos" value={products.length - active} icon={<IconX />} color="slate" />
-        <Kpi label="Sucursales activas" value={new Set(products.flatMap((p) => p.locations.map((l) => l.location.id))).size} icon={<IconBuildingStore />} color="blue" />
-      </section>
       <section className="panel filters product-filters">
         <label className="search"><IconSearch size={19} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto…" /></label>
         <label><span>Categoría</span><select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value="">Todas</option>{categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
@@ -236,7 +236,7 @@ export function ProductsPage() {
         <label><span>Estatus</span><select value={activeFilter} onChange={(event) => setActiveFilter(event.target.value)}><option value="">Todos</option><option value="true">Activos</option><option value="false">Inactivos</option></select></label>
         <button className="button ghost" onClick={() => { setSearch(""); setCategoryId(""); setUnitId(""); setActiveFilter(""); }}><IconRefresh size={18} />Limpiar</button>
       </section>
-      <section className="panel data-panel">
+      <section className="panel data-panel scroll-panel">
         {isLoading ? <p className="muted">Cargando productos…</p> : visible.length ? (
           <>
             <div className="table products-table">
@@ -302,7 +302,7 @@ export function InventoryPage() {
   });
   const visible = rows.filter((row) => row.product.name.toLowerCase().includes(search.toLowerCase()));
   return (
-    <Page icon={<IconFileAnalytics />} title="Stock actual" subtitle="Existencias confirmadas por el servidor">
+    <Page icon={<IconStack2 />} title="Stock actual" subtitle="Existencias confirmadas por el servidor">
       <section className="panel filters"><label className="search"><IconSearch size={19} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar producto…" /></label></section>
       <section className="panel data-panel">
         {isLoading ? <p>Cargando stock…</p> : visible.length ? (
@@ -600,8 +600,9 @@ export function TransfersPage({ driverMode = false }: { driverMode?: boolean }) 
       api.post(`/transfers/${id}/assign-driver`, { driverUserId }),
     onSuccess: () => void client.invalidateQueries({ queryKey: ["transfers"] })
   });
+  const isDriverView = driverMode || user.role === "DRIVER";
   return (
-    <Page icon={<IconTruck />} title={driverMode || user.role === "DRIVER" ? "Mis entregas" : "Surtidos"} subtitle={driverMode || user.role === "DRIVER" ? "Entregas asignadas a tu usuario" : "Preparación y seguimiento de producto"} action={!driverMode && !["DRIVER", "MANAGER"].includes(user.role) && <button className="button primary" onClick={() => setCreating(true)}><IconPlus size={19} />Crear surtido</button>}>
+    <Page icon={isDriverView ? <IconTruck /> : <IconPackageExport />} title={isDriverView ? "Mis entregas" : "Surtidos"} subtitle={isDriverView ? "Entregas asignadas a tu usuario" : "Preparación y seguimiento de producto"} action={!driverMode && !["DRIVER", "MANAGER"].includes(user.role) && <button className="button primary" onClick={() => setCreating(true)}><IconPlus size={19} />Crear surtido</button>}>
       {creating && <section className="panel request-builder"><div className="section-heading"><div><h2>Nuevo surtido</h2><p>Selecciona origen y destino, luego agrega productos.</p></div><button className="icon-button" onClick={() => setCreating(false)}><IconX /></button></div><div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px"}}><label>Origen<select value={source} onChange={(event) => setSource(event.target.value)}><option value="">Selecciona</option>{locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Destino<select value={destination} onChange={(event) => setDestination(event.target.value)}><option value="">Selecciona</option>{locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>{products.map((product) => <label className="request-line" key={product.id}><span><strong>{product.name}</strong><small>{product.unit.symbol}</small></span><input type="number" min="0" inputMode="decimal" placeholder="0" value={amounts[product.id] ?? ""} onChange={(event) => setAmounts({ ...amounts, [product.id]: event.target.value })} /></label>)}<div className="sticky-submit"><button className="button primary" disabled={!source || !destination || !Object.values(amounts).some((value) => Number(value) > 0) || create.isPending} onClick={() => create.mutate()}>{create.isPending ? "Preparando..." : "Preparar surtido"}</button></div>{create.error && <div className="form-error">{typeof create.error.message === 'string' ? create.error.message : JSON.stringify(create.error.message)}</div>}</section>}
       <section className="delivery-grid">{transfers.length ? transfers.map((transfer) => <article className="delivery-card" key={transfer.id}><div className="delivery-heading"><div><span className="eyebrow">{transfer.destination.name}</span><h2>Surtido #{transfer.id.slice(-6).toUpperCase()}</h2></div><Status value={transfer.status} /></div><TransferTimeline status={transfer.status} /><ul>{transfer.lines.map((line) => <li key={line.id}><span>{line.product.name}</span><strong>{quantity(line.sentQuantity)} {line.product.unit.symbol}</strong></li>)}</ul>{transfer.driver && <p className="muted">🚗 {transfer.driver.name}</p>}{["SYSTEM_OWNER", "ADMIN"].includes(user.role) && transfer.status === "PREPARING" && <label className="driver-select">Asignar repartidor<select defaultValue="" onChange={(event) => event.target.value && assign.mutate({ id: transfer.id, driverUserId: event.target.value })}><option value="">Selecciona</option>{users.filter((item) => item.role === "DRIVER" && item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}{user.role === "DRIVER" && transfer.status === "ASSIGNED" && <button className="button primary wide" onClick={() => transition.mutate({ id: transfer.id, action: "start" })}>Iniciar reparto</button>}{user.role === "DRIVER" && transfer.status === "IN_ROUTE" && <button className="button primary wide" onClick={() => transition.mutate({ id: transfer.id, action: "deliver" })}>Marcar entrega</button>}</article>) : <Empty>No hay entregas en esta vista.</Empty>}</section>
     </Page>
@@ -631,7 +632,7 @@ export function ReceivingPage() {
   const getDifferenceClass = (sent: string, received: string) => {
     const s = Number(sent), r = Number(received);
     if (s === r) return "neutral";
-    if (Math.abs(s - r) / s <= 0.02) return "warning";
+    if (Math.abs(s - r) / s <= getReceptionTolerance()) return "warning";
     return "danger";
   };
 
@@ -1012,13 +1013,152 @@ export function AuditPage() {
   return <Page icon={<IconChecklist />} title="Auditoría" subtitle="Acciones administrativas inmutables"><section className="panel data-panel">{logs.map((log) => <article className="list-row" key={log.id}><div><strong>{log.action} · {log.entityType}</strong><small>{log.user.name} · {date(log.createdAt)} · #{log.entityId.slice(-6)}</small></div></article>)}</section></Page>;
 }
 
-export function ConfigPage() {
+export function CatalogPage() {
+  const { user, locations } = useApp();
+  const client = useQueryClient();
+  const [showCategoryForm, setShowCategoryForm] = useState(false);
+  const [showUnitForm, setShowUnitForm] = useState(false);
   const { data: categories = [] } = useQuery({ queryKey: ["categories"], queryFn: () => api.get<Category[]>("/categories") });
   const { data: units = [] } = useQuery({ queryKey: ["units"], queryFn: () => api.get<Unit[]>("/units") });
-  const { locations } = useApp();
+  const canEdit = ["SYSTEM_OWNER", "ADMIN"].includes(user.role);
+
+  const createCategory = useMutation({
+    mutationFn: (body: { name: string }) => api.post("/categories", body),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["categories"] });
+      setShowCategoryForm(false);
+    }
+  });
+  const createUnit = useMutation({
+    mutationFn: (body: { name: string; symbol: string; allowDecimals: boolean }) => api.post("/units", body),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["units"] });
+      setShowUnitForm(false);
+    }
+  });
+
   return (
-    <Page icon={<IconSettings />} title="Configuración" subtitle="Catálogos operativos del sistema">
-      <section className="settings-grid"><article className="panel"><h2>Sucursales</h2>{locations.map((item) => <div className="list-row" key={item.id}><strong>{item.name}</strong><small>{item.code}</small></div>)}</article><article className="panel"><h2>Categorías</h2>{categories.map((item) => <div className="list-row" key={item.id}><strong>{item.name}</strong></div>)}</article><article className="panel"><h2>Unidades</h2>{units.map((item) => <div className="list-row" key={item.id}><strong>{item.name}</strong><small>{item.symbol}</small></div>)}</article></section>
+    <Page icon={<IconBox />} title="Catálogo" subtitle="Sucursales, categorías y unidades del sistema">
+      <section className="settings-grid">
+        <article className="panel">
+          <div className="section-heading"><h2>Sucursales</h2></div>
+          {locations.map((item) => <div className="list-row" key={item.id}><strong>{item.name}</strong><small>{item.code}</small></div>)}
+        </article>
+        <article className="panel">
+          <div className="section-heading">
+            <h2>Categorías</h2>
+            {canEdit && <button className="icon-button" aria-label="Nueva categoría" onClick={() => setShowCategoryForm(true)}><IconPlus size={17} /></button>}
+          </div>
+          {categories.map((item) => <div className="list-row" key={item.id}><strong>{item.name}</strong></div>)}
+        </article>
+        <article className="panel">
+          <div className="section-heading">
+            <h2>Unidades</h2>
+            {canEdit && <button className="icon-button" aria-label="Nueva unidad" onClick={() => setShowUnitForm(true)}><IconPlus size={17} /></button>}
+          </div>
+          {units.map((item) => <div className="list-row" key={item.id}><strong>{item.name}</strong><small>{item.symbol}</small></div>)}
+        </article>
+      </section>
+
+      {showCategoryForm && (
+        <div className="modal-backdrop" role="presentation">
+          <form
+            className="modal"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const form = new FormData(event.currentTarget);
+              createCategory.mutate({ name: String(form.get("name")) });
+            }}
+          >
+            <div className="modal-heading">
+              <div><h2>Nueva categoría</h2></div>
+              <button type="button" className="icon-button" onClick={() => setShowCategoryForm(false)}><IconX /></button>
+            </div>
+            <div className="modal-body">
+              <label>Nombre<input name="name" required minLength={2} autoFocus /></label>
+              {createCategory.error && <div className="form-error">{createCategory.error.message}</div>}
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="button ghost" onClick={() => setShowCategoryForm(false)}>Cancelar</button>
+              <button className="button primary" disabled={createCategory.isPending}>Crear</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {showUnitForm && (
+        <div className="modal-backdrop" role="presentation">
+          <form
+            className="modal"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const form = new FormData(event.currentTarget);
+              createUnit.mutate({
+                name: String(form.get("name")),
+                symbol: String(form.get("symbol")),
+                allowDecimals: form.get("allowDecimals") === "on"
+              });
+            }}
+          >
+            <div className="modal-heading">
+              <div><h2>Nueva unidad</h2></div>
+              <button type="button" className="icon-button" onClick={() => setShowUnitForm(false)}><IconX /></button>
+            </div>
+            <div className="modal-body">
+              <label>Nombre<input name="name" required minLength={2} autoFocus /></label>
+              <label>Símbolo<input name="symbol" required maxLength={6} /></label>
+              <label className="checkbox-field"><input type="checkbox" name="allowDecimals" /> Permite decimales</label>
+              {createUnit.error && <div className="form-error">{createUnit.error.message}</div>}
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="button ghost" onClick={() => setShowUnitForm(false)}>Cancelar</button>
+              <button className="button primary" disabled={createUnit.isPending}>Crear</button>
+            </div>
+          </form>
+        </div>
+      )}
+    </Page>
+  );
+}
+
+export function ConfigPage() {
+  const [tolerancePercent, setTolerancePercent] = useState(() => getReceptionTolerance() * 100);
+  const [saved, setSaved] = useState(false);
+
+  function save() {
+    const clamped = Math.min(20, Math.max(0, tolerancePercent));
+    localStorage.setItem(RECEPTION_TOLERANCE_KEY, String(clamped / 100));
+    setTolerancePercent(clamped);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  return (
+    <Page icon={<IconSettings />} title="Configuración" subtitle="Ajustes generales del sistema">
+      <section className="panel">
+        <h2>Tolerancia de diferencias en recepción</h2>
+        <p className="muted">
+          Diferencias entre lo enviado y lo recibido iguales o menores a este porcentaje se marcan como
+          advertencia leve en lugar de crítica. Se guarda en este dispositivo.
+        </p>
+        <div className="tolerance-field">
+          <input
+            type="number"
+            min="0"
+            max="20"
+            step="0.5"
+            value={tolerancePercent}
+            onChange={(event) => setTolerancePercent(Number(event.target.value))}
+          />
+          <span>%</span>
+          <button className="button primary" onClick={save}>Guardar</button>
+          {saved && <small className="save-indicator saved"><IconCircleCheck size={16} />Guardado</small>}
+        </div>
+      </section>
+      <section className="panel">
+        <h2>Acerca del sistema</h2>
+        <div className="list-row"><div><strong>FATBOY Sistema de Inventario</strong><small>Versión</small></div><span>v1.0.0</span></div>
+      </section>
     </Page>
   );
 }
