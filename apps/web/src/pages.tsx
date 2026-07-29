@@ -9,7 +9,7 @@ import {
   IconCircleCheck,
   IconClipboardCheck,
   IconFileAnalytics,
-  IconGauge,
+  IconKey,
   IconPackageExport,
   IconPencil,
   IconPower,
@@ -261,14 +261,16 @@ export function ProductsPage() {
         <div className="modal-backdrop" role="presentation">
           <form className="modal" onSubmit={submit} key={editing?.id ?? "new"}>
             <div className="modal-heading"><div><h2>{editing ? "Editar producto" : "Nuevo producto"}</h2><p>{editing ? "Actualiza la información operativa." : "Agrega un producto al catálogo maestro."}</p></div><button type="button" className="icon-button" onClick={() => setShowForm(false)}><IconX /></button></div>
-            <label>Nombre<input name="name" required minLength={2} autoFocus defaultValue={editing?.name} /></label>
-            <label>SKU opcional<input name="sku" defaultValue={editing?.sku ?? ""} /></label>
-            <div className="form-grid">
-              <label>Categoría<select name="categoryId" required defaultValue={editing?.categoryId ?? ""}><option value="">Selecciona</option>{categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-              <label>Unidad<select name="unitId" required defaultValue={editing?.unitId ?? ""}><option value="">Selecciona</option>{units.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+            <div className="modal-body">
+              <label>Nombre<input name="name" required minLength={2} autoFocus defaultValue={editing?.name} /></label>
+              <label>SKU opcional<input name="sku" defaultValue={editing?.sku ?? ""} /></label>
+              <div className="form-grid">
+                <label>Categoría<select name="categoryId" required defaultValue={editing?.categoryId ?? ""}><option value="">Selecciona</option>{categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+                <label>Unidad<select name="unitId" required defaultValue={editing?.unitId ?? ""}><option value="">Selecciona</option>{units.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+              </div>
+              <label>URL de imagen opcional<input name="imageUrl" defaultValue={editing?.imageUrl ?? ""} /></label>
+              {create.error && <div className="form-error">{create.error.message}</div>}
             </div>
-            <label>URL de imagen opcional<input name="imageUrl" defaultValue={editing?.imageUrl ?? ""} /></label>
-            {create.error && <div className="form-error">{create.error.message}</div>}
             <div className="modal-actions"><button type="button" className="button ghost" onClick={() => setShowForm(false)}>Cancelar</button><button className="button primary" disabled={create.isPending}>Guardar producto</button></div>
           </form>
         </div>
@@ -413,36 +415,38 @@ export function CountCapturePage() {
         <button className="button primary" disabled={!allCaptured || pendingOffline > 0 || !navigator.onLine} onClick={() => setShowValidation(true)}>Confirmar conteo</button>
       </div>
       {showValidation && validation && (
-        <div className="modal-overlay" onClick={() => setShowValidation(false)}>
+        <div className="modal-backdrop" onClick={() => setShowValidation(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
+            <div className="modal-heading">
               <h2>{validation.valid ? "Resumen del conteo" : "Errores detectados"}</h2>
               <button className="icon-button" onClick={() => setShowValidation(false)}><IconX /></button>
             </div>
-            {!validation.valid && validation.issues.length > 0 && (
-              <div className="form-error">{validation.issues.map((issue: string) => <div key={issue}>{issue}</div>)}</div>
-            )}
-            {validation.adjustments.length > 0 && (
-              <table className="adjustments-table">
-                <thead><tr><th>Producto</th><th>Diferencia</th><th>Stock nuevo</th></tr></thead>
-                <tbody>
-                  {validation.adjustments.map((adj: any) => (
-                    <tr key={adj.productId}>
-                      <td>{adj.productName}</td>
-                      <td className={adj.delta.startsWith('-') ? 'negative' : 'positive'}>{adj.delta}</td>
-                      <td>{quantity(adj.newBalance)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+            <div className="modal-body">
+              {!validation.valid && validation.issues.length > 0 && (
+                <div className="form-error">{validation.issues.map((issue: string) => <div key={issue}>{issue}</div>)}</div>
+              )}
+              {validation.adjustments.length > 0 && (
+                <table className="adjustments-table">
+                  <thead><tr><th>Producto</th><th>Diferencia</th><th>Stock nuevo</th></tr></thead>
+                  <tbody>
+                    {validation.adjustments.map((adj: any) => (
+                      <tr key={adj.productId}>
+                        <td>{adj.productName}</td>
+                        <td className={adj.delta.startsWith('-') ? 'negative' : 'positive'}>{adj.delta}</td>
+                        <td>{quantity(adj.newBalance)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {complete.error && <div className="form-error">{complete.error.message}</div>}
+            </div>
             <div className="modal-actions">
               <button className="button" onClick={() => setShowValidation(false)}>Cancelar</button>
               <button className="button primary" disabled={!validation.valid || complete.isPending} onClick={() => complete.mutate()}>
                 {complete.isPending ? "Procesando..." : "Confirmar"}
               </button>
             </div>
-            {complete.error && <div className="form-error">{complete.error.message}</div>}
           </div>
         </div>
       )}
@@ -744,29 +748,31 @@ export function ReceivingPage() {
         </section>
       )}
       {showSummary && selected && (
-        <div className="modal-overlay" onClick={() => setShowSummary(false)}>
+        <div className="modal-backdrop" onClick={() => setShowSummary(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
+            <div className="modal-heading">
               <h2>Resumen de recepción</h2>
               <button className="icon-button" onClick={() => setShowSummary(false)}>
                 <IconX />
               </button>
             </div>
-            {differences.length > 0 && (
-              <div className="form-error">
-                <strong>Se crearán {differences.length} incidencia(s):</strong>
-                <ul style={{ marginTop: "8px", paddingLeft: "20px" }}>
-                  {differences.map((d) => (
-                    <li key={d.productId}>
-                      {d.productName}: {d.diff > 0 ? "Exceso" : "Falta"} de {Math.abs(d.diff)} unidades
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <p style={{ padding: "0 20px 16px", color: "var(--muted)", fontSize: "0.9rem" }}>
-              {differences.length === 0 ? "✓ Recepción perfecta, sin diferencias" : "Revisa las diferencias antes de confirmar."}
-            </p>
+            <div className="modal-body">
+              {differences.length > 0 && (
+                <div className="form-error">
+                  <strong>Se crearán {differences.length} incidencia(s):</strong>
+                  <ul style={{ marginTop: "8px", paddingLeft: "20px" }}>
+                    {differences.map((d) => (
+                      <li key={d.productId}>
+                        {d.productName}: {d.diff > 0 ? "Exceso" : "Falta"} de {Math.abs(d.diff)} unidades
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <p className="muted" style={{ fontSize: "0.9rem" }}>
+                {differences.length === 0 ? "✓ Recepción perfecta, sin diferencias" : "Revisa las diferencias antes de confirmar."}
+              </p>
+            </div>
             <div className="modal-actions">
               <button className="button" onClick={() => setShowSummary(false)}>
                 Editar
@@ -816,12 +822,186 @@ export function ReportsPage() {
   );
 }
 
-type UserRow = { id: string; name: string; email: string; role: string; active: boolean; lastLoginAt?: string | null };
-export function UsersPage() {
-  const { data: users = [] } = useQuery({ queryKey: ["users"], queryFn: () => api.get<UserRow[]>("/users") });
+type UserRow = { id: string; name: string; email: string; role: string; locationId?: string | null; active: boolean; lastLoginAt?: string | null };
+
+const creatableRoles = ["ADMIN", "MANAGER", "DRIVER"] as const;
+
+function roleLabelEs(role: string) {
   return (
-    <Page icon={<IconUsers />} title="Usuarios" subtitle="Accesos y roles del sistema">
-      <section className="panel data-panel">{users.length ? users.map((user) => <article className="list-row" key={user.id}><div><strong>{user.name}</strong><small>{user.email} · {user.role.replace("_", " ")}</small></div><Status value={user.active ? "Activo" : "Inactivo"} /></article>) : <Empty>No hay usuarios visibles.</Empty>}</section>
+    {
+      SYSTEM_OWNER: "Propietario del sistema",
+      ADMIN: "Administrador",
+      MANAGER: "Encargado",
+      DRIVER: "Repartidor"
+    }[role] ?? role.replace("_", " ")
+  );
+}
+
+export function UsersPage() {
+  const { locations } = useApp();
+  const client = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<UserRow | null>(null);
+  const [role, setRole] = useState<string>("MANAGER");
+  const [resetTarget, setResetTarget] = useState<UserRow | null>(null);
+  const { data: users = [] } = useQuery({ queryKey: ["users"], queryFn: () => api.get<UserRow[]>("/users") });
+
+  const save = useMutation({
+    mutationFn: (body: Record<string, unknown>) =>
+      editing ? api.patch(`/users/${editing.id}`, body) : api.post("/users", body),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["users"] });
+      setShowForm(false);
+      setEditing(null);
+    }
+  });
+
+  const toggleActive = useMutation({
+    mutationFn: (target: UserRow) => api.patch(`/users/${target.id}`, { active: !target.active }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ["users"] })
+  });
+
+  const resetPassword = useMutation({
+    mutationFn: (password: string) => api.post(`/users/${resetTarget!.id}/reset-password`, { password }),
+    onSuccess: () => setResetTarget(null)
+  });
+
+  function openCreate() {
+    setEditing(null);
+    setRole("MANAGER");
+    setShowForm(true);
+  }
+  function openEdit(target: UserRow) {
+    setEditing(target);
+    setRole(target.role);
+    setShowForm(true);
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const locationId = role === "MANAGER" ? String(form.get("locationId") || "") || null : null;
+    if (editing) {
+      save.mutate({ name: String(form.get("name")), role, locationId });
+    } else {
+      save.mutate({
+        name: String(form.get("name")),
+        email: String(form.get("email")),
+        password: String(form.get("password")),
+        role,
+        locationId
+      });
+    }
+  }
+
+  return (
+    <Page
+      icon={<IconUsers />}
+      title="Usuarios"
+      subtitle="Accesos y roles del sistema"
+      action={<button className="button primary" onClick={openCreate}><IconPlus size={19} />Nuevo usuario</button>}
+    >
+      <section className="panel data-panel">
+        {users.length ? users.map((item) => (
+          <article className="list-row" key={item.id}>
+            <div>
+              <strong>{item.name}</strong>
+              <small>
+                {item.email} · {roleLabelEs(item.role)}
+                {item.locationId ? ` · ${locations.find((location) => location.id === item.locationId)?.name ?? ""}` : ""}
+              </small>
+            </div>
+            <Status value={item.active ? "Activo" : "Inactivo"} />
+            {item.role !== "SYSTEM_OWNER" && (
+              <span className="row-actions">
+                <button aria-label={`Editar ${item.name}`} onClick={() => openEdit(item)}><IconPencil size={17} /></button>
+                <button aria-label={`Restablecer contraseña de ${item.name}`} onClick={() => setResetTarget(item)}><IconKey size={17} /></button>
+                <button aria-label={`${item.active ? "Desactivar" : "Activar"} ${item.name}`} onClick={() => toggleActive.mutate(item)}><IconPower size={17} /></button>
+              </span>
+            )}
+          </article>
+        )) : <Empty>No hay usuarios visibles.</Empty>}
+      </section>
+
+      {showForm && (
+        <div className="modal-backdrop" role="presentation">
+          <form className="modal" onSubmit={submit} key={editing?.id ?? "new"}>
+            <div className="modal-heading">
+              <div>
+                <h2>{editing ? "Editar usuario" : "Nuevo usuario"}</h2>
+                <p>{editing ? "Actualiza rol, sucursal o estatus." : "Crea un acceso con su rol correspondiente."}</p>
+              </div>
+              <button type="button" className="icon-button" onClick={() => setShowForm(false)}><IconX /></button>
+            </div>
+            <div className="modal-body">
+              <label>Nombre<input name="name" required minLength={2} autoFocus defaultValue={editing?.name} /></label>
+              {!editing && <label>Correo electrónico<input name="email" type="email" required /></label>}
+              {!editing && (
+                <label>
+                  Contraseña
+                  <input name="password" type="password" required minLength={12} />
+                  <small>Mínimo 12 caracteres.</small>
+                </label>
+              )}
+              <div className="form-grid">
+                <label>
+                  Rol
+                  <select name="role" required value={role} onChange={(event) => setRole(event.target.value)}>
+                    {creatableRoles.map((item) => <option key={item} value={item}>{roleLabelEs(item)}</option>)}
+                  </select>
+                </label>
+                {role === "MANAGER" && (
+                  <label>
+                    Sucursal
+                    <select name="locationId" required defaultValue={editing?.locationId ?? ""}>
+                      <option value="">Selecciona</option>
+                      {locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
+                    </select>
+                  </label>
+                )}
+              </div>
+              {save.error && <div className="form-error">{save.error.message}</div>}
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="button ghost" onClick={() => setShowForm(false)}>Cancelar</button>
+              <button className="button primary" disabled={save.isPending}>{editing ? "Guardar cambios" : "Crear usuario"}</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {resetTarget && (
+        <div className="modal-backdrop" role="presentation">
+          <form
+            className="modal"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const form = new FormData(event.currentTarget);
+              resetPassword.mutate(String(form.get("password")));
+            }}
+          >
+            <div className="modal-heading">
+              <div>
+                <h2>Restablecer contraseña</h2>
+                <p>{resetTarget.name}</p>
+              </div>
+              <button type="button" className="icon-button" onClick={() => setResetTarget(null)}><IconX /></button>
+            </div>
+            <div className="modal-body">
+              <label>
+                Nueva contraseña
+                <input name="password" type="password" required minLength={12} autoFocus />
+                <small>Mínimo 12 caracteres. Se cerrará su sesión activa.</small>
+              </label>
+              {resetPassword.error && <div className="form-error">{resetPassword.error.message}</div>}
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="button ghost" onClick={() => setResetTarget(null)}>Cancelar</button>
+              <button className="button primary" disabled={resetPassword.isPending}>Restablecer</button>
+            </div>
+          </form>
+        </div>
+      )}
     </Page>
   );
 }
