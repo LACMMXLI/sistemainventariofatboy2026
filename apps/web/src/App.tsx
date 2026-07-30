@@ -10,8 +10,8 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import {
   IconAlertTriangle,
+  IconBolt,
   IconBox,
-  IconBurger,
   IconCategory,
   IconClipboardCheck,
   IconChecklist,
@@ -27,10 +27,13 @@ import {
   IconTruck,
   IconUsers,
   IconBuildingStore,
-  IconBell
+  IconBell,
+  IconShieldLock,
+  IconWifi
 } from "@tabler/icons-react";
 import type { SessionUser } from "@fatboy/shared";
 import { api, login, logout, refreshSession } from "./api";
+import { errorMessage, useToast } from "./toast";
 import type { Location } from "./types";
 import { AppLink, Router, useRouter } from "./router";
 import {
@@ -68,7 +71,7 @@ export function App() {
     refreshSession().then(setUser);
   }, []);
 
-  if (user === undefined) return <div className="splash"><IconBurger size={52} /><strong>FATBOY</strong></div>;
+  if (user === undefined) return <Splash />;
   if (!user) return <LoginPage onLogin={setUser} />;
 
   return (
@@ -79,6 +82,29 @@ export function App() {
         setUser(null);
       }}
     />
+  );
+}
+
+function Splash() {
+  return (
+    <div className="splash">
+      <img src="/icon-192.png" alt="FATBOY" />
+      <strong>FATBOY</strong>
+      <div className="splash-bar"><i /></div>
+    </div>
+  );
+}
+
+/** Marca del sistema: el ícono de la app más el logotipo tipográfico. */
+function Brand() {
+  return (
+    <div className="brand">
+      <img className="brand-mark" src="/icon-192.png" alt="" />
+      <span className="brand-word">
+        <strong>FATBOY</strong>
+        <span>SISTEMA DE INVENTARIO</span>
+      </span>
+    </div>
   );
 }
 
@@ -176,9 +202,7 @@ function Shell() {
   return (
     <div className={`app-shell${collapsed ? " sidebar-collapsed" : ""}`}>
       <aside className={`sidebar${collapsed ? " collapsed" : ""}`}>
-        <div className="brand">
-          <img className="brand-image" src="/brand-fatboy.png" alt="FATBOY Sistema de Inventario" />
-        </div>
+        <Brand />
         <button
           type="button"
           className="sidebar-toggle"
@@ -202,7 +226,7 @@ function Shell() {
       </aside>
 
       <header className="topbar">
-        <div className="mobile-brand"><img src="/brand-fatboy.png" alt="FATBOY" /></div>
+        <div className="mobile-brand"><img src="/icon-192.png" alt="" /><strong>FATBOY</strong></div>
         {app.user.role !== "DRIVER" && app.user.role !== "MANAGER" && (
           <label className="location-picker">
             <IconBuildingStore size={19} />
@@ -215,7 +239,7 @@ function Shell() {
             </select>
           </label>
         )}
-        <button className="icon-button" aria-label="Notificaciones"><IconBell size={21} /></button>
+        <NotificationsButton />
         <div className="profile">
           <span className="avatar">{app.user.name.slice(0, 1).toUpperCase()}</span>
           <span><strong>{app.user.name}</strong><small>{roleLabel(app.user.role)}</small></span>
@@ -226,7 +250,10 @@ function Shell() {
       </header>
 
       <main className="content" aria-label={active}>
-        <RouteContent path={route.path} />
+        {/* La llave por ruta reinicia la animación de entrada en cada vista */}
+        <div className="view" key={route.path}>
+          <RouteContent path={route.path} />
+        </div>
       </main>
 
       <nav className="bottom-nav" aria-label="Navegación principal">
@@ -237,6 +264,41 @@ function Shell() {
         ))}
       </nav>
     </div>
+  );
+}
+
+/** Campana del sistema: resume lo pendiente sin sacar al usuario de su pantalla. */
+function NotificationsButton() {
+  const app = useApp();
+  const toast = useToast();
+  const { data } = useQuery<Record<string, number>>({
+    queryKey: ["dashboard", app.locationId],
+    queryFn: () => api.get(`/dashboard${app.locationId ? `?locationId=${app.locationId}` : ""}`),
+    refetchInterval: 60_000
+  });
+
+  const pending = [
+    ["solicitudes pendientes", data?.pendingRequests ?? 0],
+    ["surtidos por preparar", data?.preparingTransfers ?? 0],
+    ["recepciones pendientes", data?.pendingReceipts ?? 0],
+    ["incidencias abiertas", data?.openIncidents ?? 0]
+  ].filter(([, value]) => Number(value) > 0) as [string, number][];
+
+  return (
+    <button
+      className={`icon-button${pending.length ? " has-dot" : ""}`}
+      aria-label={pending.length ? `Notificaciones: ${pending.length} temas pendientes` : "Notificaciones"}
+      onClick={() =>
+        pending.length
+          ? toast.warning({
+              title: "Pendientes de hoy",
+              detail: pending.map(([label, value]) => `${value} ${label}`).join(" · ")
+            })
+          : toast.success({ title: "Todo al día", detail: "No hay pendientes en esta sucursal." })
+      }
+    >
+      <IconBell size={21} />
+    </button>
   );
 }
 
@@ -259,7 +321,15 @@ function RouteContent({ path }: { path: string }) {
   return <DashboardPage />;
 }
 
+const loginHighlights = [
+  [IconClipboardCheck, "Conteo físico guiado, producto por producto"],
+  [IconTruck, "Reparto entre sucursales con seguimiento en vivo"],
+  [IconWifi, "Sigue capturando aunque se caiga la señal"],
+  [IconShieldLock, "Accesos por rol y bitácora de auditoría"]
+] as const;
+
 function LoginPage({ onLogin }: { onLogin: (user: SessionUser) => void }) {
+  const toast = useToast();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -269,9 +339,13 @@ function LoginPage({ onLogin }: { onLogin: (user: SessionUser) => void }) {
     setError("");
     const data = new FormData(event.currentTarget);
     try {
-      onLogin(await login(String(data.get("email")), String(data.get("password"))));
+      const user = await login(String(data.get("email")), String(data.get("password")));
+      toast.success({ title: `Bienvenido, ${user.name.split(" ")[0]}`, detail: roleLabel(user.role) });
+      onLogin(user);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "No pudimos iniciar sesión");
+      const message = errorMessage(cause, "No pudimos iniciar sesión");
+      setError(message);
+      toast.error({ title: "Acceso denegado", detail: message });
     } finally {
       setBusy(false);
     }
@@ -280,17 +354,28 @@ function LoginPage({ onLogin }: { onLogin: (user: SessionUser) => void }) {
   return (
     <main className="login">
       <section className="login-brand">
-        <img src="/brand-fatboy.png" alt="FATBOY Sistema de Inventario" />
-        <p>Inventario, conteo y distribución en un solo lugar.</p>
+        <img src="/icon-512.png" alt="FATBOY" />
+        <div className="login-title">
+          <h1>FATBOY</h1>
+          <span>Sistema de Inventario</span>
+        </div>
+        <p>Conteo, solicitudes y reparto entre sucursales, en un solo tablero.</p>
+        <div className="login-features">
+          {loginHighlights.map(([Icon, label]) => (
+            <span key={label}><Icon size={18} />{label}</span>
+          ))}
+        </div>
       </section>
       <form className="login-card" onSubmit={submit}>
-        <span className="eyebrow">SISTEMA DE INVENTARIO</span>
+        <span className="eyebrow">Acceso al sistema</span>
         <h2>Bienvenido</h2>
         <p>Ingresa con tu cuenta asignada.</p>
-        <label>Correo electrónico<input name="email" type="email" autoComplete="email" required /></label>
+        <label>Correo electrónico<input name="email" type="email" autoComplete="email" required autoFocus /></label>
         <label>Contraseña<input name="password" type="password" autoComplete="current-password" required minLength={8} /></label>
         {error && <div className="form-error" role="alert">{error}</div>}
-        <button className="button primary" disabled={busy}>{busy ? "Ingresando…" : "Iniciar sesión"}</button>
+        <button className="button primary" disabled={busy}>
+          {busy ? "Ingresando…" : <><IconBolt size={18} />Iniciar sesión</>}
+        </button>
       </form>
     </main>
   );
@@ -331,5 +416,16 @@ export function Page({
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <div className="empty"><IconBox size={34} /><p>{children}</p></div>;
+  return <div className="empty"><IconBox size={38} /><p>{children}</p></div>;
+}
+
+/** Marcador de carga con el mismo peso visual que el contenido real, para que nada salte. */
+export function Skeleton({ rows = 5, variant = "row" }: { rows?: number; variant?: "row" | "card" }) {
+  return (
+    <div className={variant === "card" ? "stock-grid" : "skeleton-list"} aria-hidden="true">
+      {Array.from({ length: rows }, (_, index) => (
+        <div className={`skeleton skeleton-${variant}`} key={index} />
+      ))}
+    </div>
+  );
 }

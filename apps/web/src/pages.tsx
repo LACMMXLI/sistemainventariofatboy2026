@@ -24,9 +24,10 @@ import {
   IconX
 } from "@tabler/icons-react";
 import { api } from "./api";
-import { Empty, Page, useApp } from "./App";
+import { Empty, Page, Skeleton, useApp } from "./App";
 import { useRouter } from "./router";
 import { listDrafts, removeDraft, saveDraft } from "./offline";
+import { errorMessage, useToast } from "./toast";
 import type {
   Category,
   CountLine,
@@ -72,14 +73,14 @@ function AccuracyGauge({ rate }: { rate: number }) {
   return (
     <div className="accuracy-gauge">
       <svg viewBox="0 0 100 100" width="96" height="96">
-        <circle cx="50" cy="50" r="42" fill="none" stroke="var(--gray-100)" strokeWidth="10" />
+        <circle cx="50" cy="50" r="42" fill="none" stroke="var(--gray-100)" strokeWidth="9" />
         <circle
           cx="50"
           cy="50"
           r="42"
           fill="none"
           stroke={color}
-          strokeWidth="10"
+          strokeWidth="9"
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
@@ -117,7 +118,7 @@ export function DashboardPage() {
 
   return (
     <Page icon={<IconBuildingStore />} title={`Hola, ${user.name.split(" ")[0]}`} subtitle="Esto requiere atención hoy.">
-      <section className="kpi-grid">
+      <section className="kpi-grid stagger">
         {cards.map(([label, value, Icon, color]) => (
           <article className="kpi-card" key={label}>
             <span className={`kpi-icon ${color}`}><Icon size={25} /></span>
@@ -172,6 +173,7 @@ export function DashboardPage() {
 
 export function ProductsPage() {
   const client = useQueryClient();
+  const toast = useToast();
   const { user } = useApp();
   const [search, setSearch] = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -193,16 +195,28 @@ export function ProductsPage() {
       if (!editing) setEditing(product);
       return image ? api.upload<Product>(`/products/${product.id}/image`, image) : product;
     },
-    onSuccess: () => {
+    onSuccess: (product) => {
       void client.invalidateQueries({ queryKey: ["products"] });
+      toast.success({
+        title: editing ? "Producto actualizado" : "Producto creado",
+        detail: product.name
+      });
       setShowForm(false);
       setEditing(null);
-    }
+    },
+    onError: (cause) => toast.error({ title: "No se pudo guardar", detail: errorMessage(cause) })
   });
   const changeActive = useMutation({
     mutationFn: (product: Product) =>
       api.post(`/products/${product.id}/${product.active ? "deactivate" : "activate"}`),
-    onSuccess: () => void client.invalidateQueries({ queryKey: ["products"] })
+    onSuccess: (_result, product) => {
+      void client.invalidateQueries({ queryKey: ["products"] });
+      toast.info({
+        title: product.active ? "Producto desactivado" : "Producto activado",
+        detail: product.name
+      });
+    },
+    onError: (cause) => toast.error({ title: "No se pudo cambiar el estatus", detail: errorMessage(cause) })
   });
   const visible = products.filter((product) =>
     product.name.toLocaleLowerCase("es-MX").includes(search.toLocaleLowerCase("es-MX")) &&
@@ -244,7 +258,7 @@ export function ProductsPage() {
         <button className="button ghost" onClick={() => { setSearch(""); setCategoryId(""); setUnitId(""); setActiveFilter(""); }}><IconRefresh size={18} />Limpiar</button>
       </section>
       <section className="panel data-panel scroll-panel">
-        {isLoading ? <p className="muted">Cargando productos…</p> : visible.length ? (
+        {isLoading ? <Skeleton rows={7} /> : visible.length ? (
           <>
             <div className="table products-table">
               <div className="table-head"><span>Producto</span><span>Categoría</span><span>Unidad</span><span>Sucursales</span><span>Estatus</span><span>Actualización</span><span>Acciones</span></div>
@@ -343,7 +357,7 @@ export function InventoryPage() {
     <Page icon={<IconStack2 />} title="Stock actual" subtitle="Existencias confirmadas por el servidor">
       <section className="panel filters"><label className="search"><IconSearch size={19} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar producto…" /></label></section>
       <section className="panel data-panel">
-        {isLoading ? <p>Cargando stock…</p> : visible.length ? (
+        {isLoading ? <Skeleton rows={6} variant="card" /> : visible.length ? (
           <div className="stock-grid">
             {visible.map((row) => <article className="stock-card" key={row.id}><div><strong>{row.product.name}</strong><small>{row.location.name} · {row.product.category.name}</small></div><span className="stock-quantity">{quantity(row.quantity)} <small>{row.product.unit.symbol}</small></span><small>Actualizado {date(row.updatedAt)}</small></article>)}
           </div>
@@ -356,6 +370,7 @@ export function InventoryPage() {
 export function CountsPage() {
   const { locationId } = useApp();
   const client = useQueryClient();
+  const toast = useToast();
   const { navigate } = useRouter();
   const { data: counts = [] } = useQuery({
     queryKey: ["counts", locationId],
@@ -365,8 +380,13 @@ export function CountsPage() {
     mutationFn: () => api.post<StockCount>("/counts", { locationId }),
     onSuccess: (count) => {
       void client.invalidateQueries({ queryKey: ["counts"] });
+      toast.info({
+        title: "Conteo iniciado",
+        detail: `${count.location.name} · captura producto por producto, se guarda solo.`
+      });
       navigate(`/conteos/${count.id}`);
-    }
+    },
+    onError: (cause) => toast.error({ title: "No se pudo iniciar el conteo", detail: errorMessage(cause) })
   });
   const active = counts.find((count) => count.status === "IN_PROGRESS");
   return (
@@ -385,6 +405,7 @@ export function CountCapturePage() {
   const { path, navigate } = useRouter();
   const id = path.split("/")[2] ?? "";
   const client = useQueryClient();
+  const toast = useToast();
   const [filter, setFilter] = useState<"ALL" | "PENDING" | "COUNTED">("ALL");
   const [pendingOffline, setPendingOffline] = useState(0);
   const [showValidation, setShowValidation] = useState(false);
@@ -411,6 +432,9 @@ export function CountCapturePage() {
     }
     const remaining = (await listDrafts()).filter((draft) => draft.countId === id);
     setPendingOffline(remaining.length);
+    if (drafts.length && !remaining.length) {
+      toast.success({ title: "Sincronizado", detail: `${drafts.length} capturas pendientes se subieron al servidor.` });
+    }
     await client.invalidateQueries({ queryKey: ["count", id] });
   }
 
@@ -425,11 +449,13 @@ export function CountCapturePage() {
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["counts"] });
       void client.invalidateQueries({ queryKey: ["inventory"] });
+      toast.success({ title: "Conteo confirmado", detail: "El stock quedó actualizado con lo capturado." });
       navigate("/conteos");
-    }
+    },
+    onError: (cause) => toast.error({ title: "No se pudo confirmar", detail: errorMessage(cause) })
   });
 
-  if (!count?.lines) return <p className="muted">Cargando conteo…</p>;
+  if (!count?.lines) return <Skeleton rows={6} />;
   const captured = count.lines.filter((line) => line.status === "COUNTED").length;
   const filtered = count.lines.filter((line) => filter === "ALL" || line.status === filter);
   const progress = Math.round((captured / count.lines.length) * 100);
@@ -493,6 +519,7 @@ export function CountCapturePage() {
 }
 
 function CountInput({ countId, line, onSaved, onQueued }: { countId: string; line: CountLine; onSaved: () => void; onQueued: () => void }) {
+  const toast = useToast();
   const [value, setValue] = useState(line.countedQuantity ?? "");
   const [notes, setNotes] = useState(line.countNotes ?? "");
   const [state, setState] = useState<"idle" | "saving" | "saved" | "queued">("idle");
@@ -518,11 +545,17 @@ function CountInput({ countId, line, onSaved, onQueued }: { countId: string; lin
     } catch (error) {
       if (navigator.onLine) {
         setState("idle");
-        throw error;
+        toast.error({ title: `No se guardó ${line.product.name}`, detail: errorMessage(error) });
+        return;
       }
+      // Sin señal el dato no se pierde: queda en cola y se sube al reconectar.
       await saveDraft(draft);
       setState("queued");
       onQueued();
+      toast.warning({
+        title: "Guardado sin conexión",
+        detail: `${line.product.name} se sincronizará al recuperar la señal.`
+      });
     }
   }
 
@@ -548,6 +581,7 @@ function CountInput({ countId, line, onSaved, onQueued }: { countId: string; lin
 export function RequestsPage() {
   const { user, locationId } = useApp();
   const client = useQueryClient();
+  const toast = useToast();
   const [creating, setCreating] = useState(false);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const { data: requests = [] } = useQuery({ queryKey: ["requests", locationId], queryFn: () => api.get<SupplyRequest[]>(withLocation("/requests", locationId)) });
@@ -561,10 +595,13 @@ export function RequestsPage() {
       return api.post(`/requests/${request.id}/submit`);
     },
     onSuccess: () => {
+      const total = Object.values(amounts).filter((value) => Number(value) > 0).length;
       setCreating(false);
       setAmounts({});
       void client.invalidateQueries({ queryKey: ["requests"] });
-    }
+      toast.success({ title: "Solicitud enviada", detail: `${total} productos quedaron en espera de surtido.` });
+    },
+    onError: (cause) => toast.error({ title: "No se pudo enviar", detail: errorMessage(cause) })
   });
   const createTransfer = useMutation({
     mutationFn: (request: SupplyRequest) =>
@@ -580,7 +617,15 @@ export function RequestsPage() {
           }))
           .filter((line) => Number(line.sentQuantity) > 0)
       }),
-    onSuccess: () => void client.invalidateQueries({ queryKey: ["transfers"] })
+    onSuccess: (_result, request) => {
+      void client.invalidateQueries({ queryKey: ["transfers"] });
+      void client.invalidateQueries({ queryKey: ["requests"] });
+      toast.success({
+        title: "Surtido creado",
+        detail: `Ya puedes asignarle repartidor desde Surtidos · ${request.location.name}.`
+      });
+    },
+    onError: (cause) => toast.error({ title: "No se pudo crear el surtido", detail: errorMessage(cause) })
   });
   return (
     <Page icon={<IconReceipt />} title="Solicitudes" subtitle="Productos requeridos por la sucursal" action={<button className="button primary" onClick={() => setCreating(true)}><IconPlus size={19} />Nueva solicitud</button>}>
@@ -609,6 +654,7 @@ function TransferTimeline({ status }: { status: string }) {
 export function TransfersPage({ driverMode = false }: { driverMode?: boolean }) {
   const { user, locationId, locations } = useApp();
   const client = useQueryClient();
+  const toast = useToast();
   const [creating, setCreating] = useState(false);
   const [destination, setDestination] = useState(locationId);
   const [source, setSource] = useState(locationId);
@@ -626,17 +672,30 @@ export function TransfersPage({ driverMode = false }: { driverMode?: boolean }) 
       setCreating(false);
       setAmounts({});
       void client.invalidateQueries({ queryKey: ["transfers"] });
+      toast.success({ title: "Surtido preparado", detail: "El siguiente paso es asignar un repartidor." });
     },
-    onError: (error: any) => console.error("Error creating transfer:", error)
+    onError: (cause) => toast.error({ title: "No se pudo preparar", detail: errorMessage(cause) })
   });
   const transition = useMutation({
     mutationFn: ({ id, action }: { id: string; action: "start" | "deliver" }) => api.post(`/transfers/${id}/${action}`),
-    onSuccess: () => void client.invalidateQueries({ queryKey: ["transfers"] })
+    onSuccess: (_result, { action }) => {
+      void client.invalidateQueries({ queryKey: ["transfers"] });
+      toast.success(
+        action === "start"
+          ? { title: "Reparto iniciado", detail: "El surtido aparece como En ruta para la sucursal." }
+          : { title: "Entrega marcada", detail: "La sucursal ya puede confirmar la recepción." }
+      );
+    },
+    onError: (cause) => toast.error({ title: "No se pudo actualizar", detail: errorMessage(cause) })
   });
   const assign = useMutation({
     mutationFn: ({ id, driverUserId }: { id: string; driverUserId: string }) =>
       api.post(`/transfers/${id}/assign-driver`, { driverUserId }),
-    onSuccess: () => void client.invalidateQueries({ queryKey: ["transfers"] })
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["transfers"] });
+      toast.success({ title: "Repartidor asignado", detail: "Verá la entrega en su lista al iniciar sesión." });
+    },
+    onError: (cause) => toast.error({ title: "No se pudo asignar", detail: errorMessage(cause) })
   });
   const isDriverView = driverMode || user.role === "DRIVER";
   return (
@@ -650,6 +709,7 @@ export function TransfersPage({ driverMode = false }: { driverMode?: boolean }) 
 export function ReceivingPage() {
   const { locationId } = useApp();
   const client = useQueryClient();
+  const toast = useToast();
   const [selected, setSelected] = useState<Transfer | null>(null);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [showSummary, setShowSummary] = useState(false);
@@ -659,12 +719,23 @@ export function ReceivingPage() {
   const receive = useMutation({
     mutationFn: () => api.post(`/transfers/${selected!.id}/receive`, { lines: selected!.lines.map((line) => ({ lineId: line.id, receivedQuantity: amounts[line.id] ?? line.sentQuantity })) }, crypto.randomUUID()),
     onSuccess: () => {
+      const gaps = differences.length;
       setSelected(null);
       setAmounts({});
       setShowSummary(false);
       void client.invalidateQueries({ queryKey: ["transfers"] });
       void client.invalidateQueries({ queryKey: ["inventory"] });
-    }
+      void client.invalidateQueries({ queryKey: ["incidents"] });
+      if (gaps) {
+        toast.warning({
+          title: "Recepción con diferencias",
+          detail: `Se registraron ${gaps} incidencia(s) para seguimiento.`
+        });
+      } else {
+        toast.success({ title: "Recepción confirmada", detail: "Todo llegó completo. Stock actualizado." });
+      }
+    },
+    onError: (cause) => toast.error({ title: "No se pudo confirmar", detail: errorMessage(cause) })
   });
 
   const getDifferenceClass = (sent: string, received: string) => {
@@ -834,8 +905,16 @@ export function ReceivingPage() {
 export function IncidentsPage() {
   const { user, locationId } = useApp();
   const client = useQueryClient();
+  const toast = useToast();
   const { data: incidents = [] } = useQuery({ queryKey: ["incidents", locationId], queryFn: () => api.get<Incident[]>(withLocation("/incidents", locationId)) });
-  const resolve = useMutation({ mutationFn: (id: string) => api.post(`/incidents/${id}/resolve`), onSuccess: () => void client.invalidateQueries({ queryKey: ["incidents"] }) });
+  const resolve = useMutation({
+    mutationFn: (id: string) => api.post(`/incidents/${id}/resolve`),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["incidents"] });
+      toast.success({ title: "Incidencia resuelta", detail: "Queda registrada en el historial." });
+    },
+    onError: (cause) => toast.error({ title: "No se pudo resolver", detail: errorMessage(cause) })
+  });
   return (
     <Page icon={<IconAlertTriangle />} title="Incidencias" subtitle="Diferencias y daños que requieren seguimiento">
       <section className="panel data-panel">{incidents.length ? incidents.map((incident) => <article className="incident-row" key={incident.id}><span className="kpi-icon red"><IconAlertTriangle /></span><div><strong>{incident.product?.name || incident.type.replaceAll("_", " ")}</strong><small>{incident.location.name} · {incident.description} · {date(incident.createdAt)}</small></div><Status value={incident.status} />{incident.status === "OPEN" && !["MANAGER", "DRIVER"].includes(user.role) && <button className="button ghost" onClick={() => resolve.mutate(incident.id)}>Resolver</button>}</article>) : <Empty>No hay incidencias registradas.</Empty>}</section>
@@ -848,7 +927,7 @@ export function ReportsPage() {
   const { data } = useQuery({ queryKey: ["report", locationId], queryFn: () => api.get<Dashboard>(withLocation("/reports/summary", locationId)) });
   return (
     <Page icon={<IconFileAnalytics />} title="Reportes" subtitle="Resumen operativo derivado del backend">
-      <section className="kpi-grid"><Kpi label="Solicitudes pendientes" value={data?.pendingRequests ?? 0} icon={<IconReceipt />} color="blue" /><Kpi label="En ruta" value={data?.inRoute ?? 0} icon={<IconTruck />} color="green" /><Kpi label="Recepciones pendientes" value={data?.pendingReceipts ?? 0} icon={<IconChecklist />} color="orange" /><Kpi label="Incidencias abiertas" value={data?.openIncidents ?? 0} icon={<IconAlertTriangle />} color="red" /></section>
+      <section className="kpi-grid stagger"><Kpi label="Solicitudes pendientes" value={data?.pendingRequests ?? 0} icon={<IconReceipt />} color="blue" /><Kpi label="En ruta" value={data?.inRoute ?? 0} icon={<IconTruck />} color="green" /><Kpi label="Recepciones pendientes" value={data?.pendingReceipts ?? 0} icon={<IconChecklist />} color="orange" /><Kpi label="Incidencias abiertas" value={data?.openIncidents ?? 0} icon={<IconAlertTriangle />} color="red" /></section>
       <section className="panel accuracy-panel">
         <div>
           <span className="eyebrow">PRECISIÓN DE SURTIDOS</span>
@@ -879,6 +958,7 @@ function roleLabelEs(role: string) {
 export function UsersPage() {
   const { locations, user } = useApp();
   const client = useQueryClient();
+  const toast = useToast();
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<UserRow | null>(null);
   const [role, setRole] = useState<string>("MANAGER");
@@ -890,19 +970,32 @@ export function UsersPage() {
       editing ? api.patch(`/users/${editing.id}`, body) : api.post("/users", body),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["users"] });
+      toast.success({ title: editing ? "Usuario actualizado" : "Usuario creado" });
       setShowForm(false);
       setEditing(null);
-    }
+    },
+    onError: (cause) => toast.error({ title: "No se pudo guardar", detail: errorMessage(cause) })
   });
 
   const toggleActive = useMutation({
     mutationFn: (target: UserRow) => api.patch(`/users/${target.id}`, { active: !target.active }),
-    onSuccess: () => void client.invalidateQueries({ queryKey: ["users"] })
+    onSuccess: (_result, target) => {
+      void client.invalidateQueries({ queryKey: ["users"] });
+      toast.info({ title: target.active ? "Acceso desactivado" : "Acceso activado", detail: target.name });
+    },
+    onError: (cause) => toast.error({ title: "No se pudo cambiar el acceso", detail: errorMessage(cause) })
   });
 
   const resetPassword = useMutation({
     mutationFn: (password: string) => api.post(`/users/${resetTarget!.id}/reset-password`, { password }),
-    onSuccess: () => setResetTarget(null)
+    onSuccess: () => {
+      toast.success({
+        title: "Contraseña restablecida",
+        detail: `${resetTarget?.name ?? "El usuario"} deberá entrar de nuevo.`
+      });
+      setResetTarget(null);
+    },
+    onError: (cause) => toast.error({ title: "No se pudo restablecer", detail: errorMessage(cause) })
   });
 
   function openCreate() {
@@ -1060,6 +1153,7 @@ export function AuditPage() {
 export function CatalogPage() {
   const { user, locations } = useApp();
   const client = useQueryClient();
+  const toast = useToast();
   const [showLocationForm, setShowLocationForm] = useState(false);
   const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [showUnitForm, setShowUnitForm] = useState(false);
@@ -1075,27 +1169,33 @@ export function CatalogPage() {
       editingLocation ? api.patch(`/locations/${editingLocation.id}`, body) : api.post("/locations", body),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["locations"] });
+      toast.success({ title: editingLocation ? "Sucursal actualizada" : "Sucursal creada" });
       setShowLocationForm(false);
       setEditingLocation(null);
-    }
+    },
+    onError: (cause) => toast.error({ title: "No se pudo guardar la sucursal", detail: errorMessage(cause) })
   });
   const saveCategory = useMutation({
     mutationFn: (body: { name: string }) =>
       editingCategory ? api.patch(`/categories/${editingCategory.id}`, body) : api.post("/categories", body),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["categories"] });
+      toast.success({ title: editingCategory ? "Categoría actualizada" : "Categoría creada" });
       setShowCategoryForm(false);
       setEditingCategory(null);
-    }
+    },
+    onError: (cause) => toast.error({ title: "No se pudo guardar la categoría", detail: errorMessage(cause) })
   });
   const saveUnit = useMutation({
     mutationFn: (body: { name: string; symbol: string; allowDecimals: boolean; decimalPlaces: number }) =>
       editingUnit ? api.patch(`/units/${editingUnit.id}`, body) : api.post("/units", body),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["units"] });
+      toast.success({ title: editingUnit ? "Unidad actualizada" : "Unidad creada" });
       setShowUnitForm(false);
       setEditingUnit(null);
-    }
+    },
+    onError: (cause) => toast.error({ title: "No se pudo guardar la unidad", detail: errorMessage(cause) })
   });
 
   return (
@@ -1233,6 +1333,7 @@ export function CatalogPage() {
 }
 
 export function ConfigPage() {
+  const toast = useToast();
   const [tolerancePercent, setTolerancePercent] = useState(() => getReceptionTolerance() * 100);
   const [saved, setSaved] = useState(false);
 
@@ -1241,6 +1342,7 @@ export function ConfigPage() {
     localStorage.setItem(RECEPTION_TOLERANCE_KEY, String(clamped / 100));
     setTolerancePercent(clamped);
     setSaved(true);
+    toast.success({ title: "Tolerancia guardada", detail: `Diferencias hasta ${clamped}% se marcan como leves.` });
     setTimeout(() => setSaved(false), 2000);
   }
 

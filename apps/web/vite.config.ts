@@ -7,26 +7,33 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["brand-fatboy.png", "pwa-192.png", "pwa-512.png", "products/*.png"],
+      includeAssets: ["favicon.ico", "icon-180.png", "brand-fatboy.png", "products/*.png"],
       manifest: {
         name: "FATBOY Sistema de Inventario",
-        short_name: "FATBOY Inventario",
-        description: "Inventario, conteo y distribución FATBOY",
-        theme_color: "#0b1729",
-        background_color: "#f5f7fb",
+        short_name: "FATBOY",
+        description: "Inventario, conteo y distribución entre sucursales FATBOY",
+        theme_color: "#08090d",
+        background_color: "#08090d",
         display: "standalone",
         start_url: "/",
         icons: [
           {
-            src: "/pwa-192.png",
+            src: "/icon-192.png",
             sizes: "192x192",
-            type: "image/png"
+            type: "image/png",
+            purpose: "any"
           },
           {
-            src: "/pwa-512.png",
+            src: "/icon-512.png",
             sizes: "512x512",
             type: "image/png",
-            purpose: "any maskable"
+            purpose: "any"
+          },
+          {
+            src: "/icon-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable"
           }
         ]
       },
