@@ -28,6 +28,7 @@ import { Empty, Page, Skeleton, useApp } from "./App";
 import { useRouter } from "./router";
 import { listDrafts, removeDraft, saveDraft } from "./offline";
 import { errorMessage, useToast } from "./toast";
+import { Modal } from "./modal";
 import type {
   Category,
   CountLine,
@@ -288,26 +289,34 @@ export function ProductsPage() {
         ) : <Empty>No hay productos que coincidan.</Empty>}
       </section>
       {showForm && (
-        <div className="modal-backdrop" role="presentation">
-          <form className="modal" onSubmit={submit} key={editing?.id ?? "new"}>
-            <div className="modal-heading"><div><h2>{editing ? "Editar producto" : "Nuevo producto"}</h2><p>{editing ? "Actualiza la información operativa." : "Agrega un producto al catálogo maestro."}</p></div><button type="button" className="icon-button" onClick={() => setShowForm(false)}><IconX /></button></div>
-            <div className="modal-body">
-              <label>Nombre<input name="name" required minLength={2} autoFocus defaultValue={editing?.name} /></label>
-              <label>SKU opcional<input name="sku" defaultValue={editing?.sku ?? ""} /></label>
-              <div className="form-grid">
-                <label>Categoría<select name="categoryId" required defaultValue={editing?.categoryId ?? ""}><option value="">Selecciona</option>{categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-                <label>Unidad<select name="unitId" required defaultValue={editing?.unitId ?? ""}><option value="">Selecciona</option>{units.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-              </div>
-              <label>
-                Imagen del producto
-                <input name="image" type="file" accept="image/jpeg,image/png,image/webp" />
-                <small>JPG, PNG o WebP; máximo 5 MB.{editing?.imageUrl ? " Déjalo vacío para conservar la actual." : ""}</small>
-              </label>
-              {create.error && <div className="form-error">{create.error.message}</div>}
-            </div>
-            <div className="modal-actions"><button type="button" className="button ghost" onClick={() => setShowForm(false)}>Cancelar</button><button className="button primary" disabled={create.isPending}>Guardar producto</button></div>
-          </form>
-        </div>
+        <Modal
+          key={editing?.id ?? "new"}
+          title={editing ? "Editar producto" : "Nuevo producto"}
+          description={editing ? "Actualiza la información operativa." : "Agrega un producto al catálogo maestro."}
+          onClose={() => setShowForm(false)}
+          onSubmit={submit}
+          actions={
+            <>
+              <button type="button" className="button ghost" onClick={() => setShowForm(false)}>Cancelar</button>
+              <button className="button primary" disabled={create.isPending}>
+                {create.isPending ? "Guardando…" : "Guardar producto"}
+              </button>
+            </>
+          }
+        >
+          <div className="form-grid">
+            <label>Nombre<input name="name" required minLength={2} autoFocus defaultValue={editing?.name} /></label>
+            <label>SKU <span className="optional">opcional</span><input name="sku" defaultValue={editing?.sku ?? ""} /></label>
+            <label>Categoría<select name="categoryId" required defaultValue={editing?.categoryId ?? ""}><option value="">Selecciona</option>{categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+            <label>Unidad<select name="unitId" required defaultValue={editing?.unitId ?? ""}><option value="">Selecciona</option>{units.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          </div>
+          <label className="full">
+            Imagen <span className="optional">opcional</span>
+            <input name="image" type="file" accept="image/jpeg,image/png,image/webp" />
+            <small>JPG, PNG o WebP · máx. 5 MB.{editing?.imageUrl ? " Vacío conserva la actual." : ""}</small>
+          </label>
+          {create.error && <div className="form-error">{create.error.message}</div>}
+        </Modal>
       )}
     </Page>
   );
@@ -479,40 +488,51 @@ export function CountCapturePage() {
         <button className="button primary" disabled={!allCaptured || pendingOffline > 0 || !navigator.onLine} onClick={() => setShowValidation(true)}>Confirmar conteo</button>
       </div>
       {showValidation && validation && (
-        <div className="modal-backdrop" onClick={() => setShowValidation(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-heading">
-              <h2>{validation.valid ? "Resumen del conteo" : "Errores detectados"}</h2>
-              <button className="icon-button" onClick={() => setShowValidation(false)}><IconX /></button>
-            </div>
-            <div className="modal-body">
-              {!validation.valid && validation.issues.length > 0 && (
-                <div className="form-error">{validation.issues.map((issue: string) => <div key={issue}>{issue}</div>)}</div>
-              )}
-              {validation.adjustments.length > 0 && (
-                <table className="adjustments-table">
-                  <thead><tr><th>Producto</th><th>Diferencia</th><th>Stock nuevo</th></tr></thead>
-                  <tbody>
-                    {validation.adjustments.map((adj: any) => (
-                      <tr key={adj.productId}>
-                        <td>{adj.productName}</td>
-                        <td className={adj.delta.startsWith('-') ? 'negative' : 'positive'}>{adj.delta}</td>
-                        <td>{quantity(adj.newBalance)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-              {complete.error && <div className="form-error">{complete.error.message}</div>}
-            </div>
-            <div className="modal-actions">
-              <button className="button" onClick={() => setShowValidation(false)}>Cancelar</button>
-              <button className="button primary" disabled={!validation.valid || complete.isPending} onClick={() => complete.mutate()}>
-                {complete.isPending ? "Procesando..." : "Confirmar"}
+        <Modal
+          title={validation.valid ? "Resumen del conteo" : "Errores detectados"}
+          description={
+            validation.valid
+              ? `${validation.adjustments.length} producto(s) ajustarán su stock al confirmar.`
+              : "Corrige lo siguiente antes de confirmar."
+          }
+          size="wide"
+          onClose={() => setShowValidation(false)}
+          actions={
+            <>
+              <button className="button ghost" onClick={() => setShowValidation(false)}>Cancelar</button>
+              <button
+                className="button primary"
+                disabled={!validation.valid || complete.isPending}
+                onClick={() => complete.mutate()}
+              >
+                {complete.isPending ? "Procesando…" : "Confirmar conteo"}
               </button>
+            </>
+          }
+        >
+          {!validation.valid && validation.issues.length > 0 && (
+            <div className="form-error">{validation.issues.map((issue: string) => <div key={issue}>{issue}</div>)}</div>
+          )}
+          {validation.adjustments.length > 0 ? (
+            <div className="table-scroll">
+              <table className="adjustments-table">
+                <thead><tr><th>Producto</th><th>Diferencia</th><th>Stock nuevo</th></tr></thead>
+                <tbody>
+                  {validation.adjustments.map((adj: any) => (
+                    <tr key={adj.productId}>
+                      <td>{adj.productName}</td>
+                      <td className={adj.delta.startsWith("-") ? "negative" : "positive"}>{adj.delta}</td>
+                      <td>{quantity(adj.newBalance)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </div>
-        </div>
+          ) : validation.valid ? (
+            <p className="muted">El conteo coincide con el stock registrado. No hay ajustes que aplicar.</p>
+          ) : null}
+          {complete.error && <div className="form-error">{complete.error.message}</div>}
+        </Modal>
       )}
     </Page>
   );
@@ -858,45 +878,40 @@ export function ReceivingPage() {
         </section>
       )}
       {showSummary && selected && (
-        <div className="modal-backdrop" onClick={() => setShowSummary(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-heading">
-              <h2>Resumen de recepción</h2>
-              <button className="icon-button" onClick={() => setShowSummary(false)}>
-                <IconX />
+        <Modal
+          title="Resumen de recepción"
+          description={`${selected.destination.name} · #${selected.id.slice(-6).toUpperCase()}`}
+          onClose={() => setShowSummary(false)}
+          actions={
+            <>
+              <button className="button ghost" onClick={() => setShowSummary(false)}>Editar</button>
+              <button className="button primary" disabled={receive.isPending} onClick={() => receive.mutate()}>
+                {receive.isPending ? "Procesando…" : "Confirmar recepción"}
               </button>
+            </>
+          }
+        >
+          {differences.length > 0 ? (
+            <div className="warning-box">
+              <strong>Se crearán {differences.length} incidencia(s)</strong>
+              <ul>
+                {differences.map((d) => (
+                  <li key={d.productId}>
+                    {d.productName}: {d.diff > 0 ? "exceso" : "falta"} de {Math.abs(d.diff)} unidades
+                  </li>
+                ))}
+              </ul>
             </div>
-            <div className="modal-body">
-              {differences.length > 0 && (
-                <div className="form-error">
-                  <strong>Se crearán {differences.length} incidencia(s):</strong>
-                  <ul style={{ marginTop: "8px", paddingLeft: "20px" }}>
-                    {differences.map((d) => (
-                      <li key={d.productId}>
-                        {d.productName}: {d.diff > 0 ? "Exceso" : "Falta"} de {Math.abs(d.diff)} unidades
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              <p className="muted" style={{ fontSize: "0.9rem" }}>
-                {differences.length === 0 ? "✓ Recepción perfecta, sin diferencias" : "Revisa las diferencias antes de confirmar."}
-              </p>
+          ) : (
+            <div className="confirm-note">
+              <IconCircleCheck size={22} />
+              <div>
+                <strong>Recepción exacta</strong>
+                <span>Todo coincide con lo enviado. El stock se actualiza al confirmar.</span>
+              </div>
             </div>
-            <div className="modal-actions">
-              <button className="button" onClick={() => setShowSummary(false)}>
-                Editar
-              </button>
-              <button
-                className="button primary"
-                disabled={receive.isPending}
-                onClick={() => receive.mutate()}
-              >
-                {receive.isPending ? "Procesando..." : "Confirmar recepción"}
-              </button>
-            </div>
-          </div>
-        </div>
+          )}
+        </Modal>
       )}
     </Page>
   );
@@ -1062,83 +1077,79 @@ export function UsersPage() {
       </section>
 
       {showForm && (
-        <div className="modal-backdrop" role="presentation">
-          <form className="modal" onSubmit={submit} key={editing?.id ?? "new"}>
-            <div className="modal-heading">
-              <div>
-                <h2>{editing ? "Editar usuario" : "Nuevo usuario"}</h2>
-                <p>{editing ? "Actualiza rol, sucursal o estatus." : "Crea un acceso con su rol correspondiente."}</p>
-              </div>
-              <button type="button" className="icon-button" onClick={() => setShowForm(false)}><IconX /></button>
-            </div>
-            <div className="modal-body">
-              <label>Nombre<input name="name" required minLength={2} autoFocus defaultValue={editing?.name} /></label>
-              <label>Correo electrónico<input name="email" type="email" required defaultValue={editing?.email} /></label>
-              {!editing && (
-                <label>
-                  Contraseña
-                  <input name="password" type="password" required minLength={12} />
-                  <small>Mínimo 12 caracteres.</small>
-                </label>
-              )}
-              {editing?.role !== "SYSTEM_OWNER" && <div className="form-grid">
-                <label>
-                  Rol
-                  <select name="role" required value={role} onChange={(event) => setRole(event.target.value)}>
-                    {creatableRoles.map((item) => <option key={item} value={item}>{roleLabelEs(item)}</option>)}
-                  </select>
-                </label>
-                {role === "MANAGER" && (
-                  <label>
-                    Sucursal
-                    <select name="locationId" required defaultValue={editing?.locationId ?? ""}>
-                      <option value="">Selecciona</option>
-                      {locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
-                    </select>
-                  </label>
-                )}
-              </div>}
-              {save.error && <div className="form-error">{save.error.message}</div>}
-            </div>
-            <div className="modal-actions">
+        <Modal
+          key={editing?.id ?? "new"}
+          title={editing ? "Editar usuario" : "Nuevo usuario"}
+          description={editing ? "Actualiza rol y sucursal." : "Crea un acceso con su rol."}
+          onClose={() => setShowForm(false)}
+          onSubmit={submit}
+          actions={
+            <>
               <button type="button" className="button ghost" onClick={() => setShowForm(false)}>Cancelar</button>
-              <button className="button primary" disabled={save.isPending}>{editing ? "Guardar cambios" : "Crear usuario"}</button>
-            </div>
-          </form>
-        </div>
+              <button className="button primary" disabled={save.isPending}>
+                {save.isPending ? "Guardando…" : editing ? "Guardar cambios" : "Crear usuario"}
+              </button>
+            </>
+          }
+        >
+          <div className="form-grid">
+            <label>Nombre<input name="name" required minLength={2} autoFocus defaultValue={editing?.name} /></label>
+            <label>Correo<input name="email" type="email" required defaultValue={editing?.email} /></label>
+            {!editing && (
+              <label>
+                Contraseña
+                <input name="password" type="password" required minLength={12} />
+                <small>Mínimo 12 caracteres.</small>
+              </label>
+            )}
+            {editing?.role !== "SYSTEM_OWNER" && (
+              <label>
+                Rol
+                <select name="role" required value={role} onChange={(event) => setRole(event.target.value)}>
+                  {creatableRoles.map((item) => <option key={item} value={item}>{roleLabelEs(item)}</option>)}
+                </select>
+              </label>
+            )}
+            {editing?.role !== "SYSTEM_OWNER" && role === "MANAGER" && (
+              <label>
+                Sucursal
+                <select name="locationId" required defaultValue={editing?.locationId ?? ""}>
+                  <option value="">Selecciona</option>
+                  {locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
+                </select>
+              </label>
+            )}
+          </div>
+          {save.error && <div className="form-error">{save.error.message}</div>}
+        </Modal>
       )}
 
       {resetTarget && (
-        <div className="modal-backdrop" role="presentation">
-          <form
-            className="modal"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const form = new FormData(event.currentTarget);
-              resetPassword.mutate(String(form.get("password")));
-            }}
-          >
-            <div className="modal-heading">
-              <div>
-                <h2>Restablecer contraseña</h2>
-                <p>{resetTarget.name}</p>
-              </div>
-              <button type="button" className="icon-button" onClick={() => setResetTarget(null)}><IconX /></button>
-            </div>
-            <div className="modal-body">
-              <label>
-                Nueva contraseña
-                <input name="password" type="password" required minLength={12} autoFocus />
-                <small>Mínimo 12 caracteres. Se cerrará su sesión activa.</small>
-              </label>
-              {resetPassword.error && <div className="form-error">{resetPassword.error.message}</div>}
-            </div>
-            <div className="modal-actions">
+        <Modal
+          title="Restablecer contraseña"
+          description={resetTarget.name}
+          onClose={() => setResetTarget(null)}
+          onSubmit={(event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            resetPassword.mutate(String(form.get("password")));
+          }}
+          actions={
+            <>
               <button type="button" className="button ghost" onClick={() => setResetTarget(null)}>Cancelar</button>
-              <button className="button primary" disabled={resetPassword.isPending}>Restablecer</button>
-            </div>
-          </form>
-        </div>
+              <button className="button primary" disabled={resetPassword.isPending}>
+                {resetPassword.isPending ? "Restableciendo…" : "Restablecer"}
+              </button>
+            </>
+          }
+        >
+          <label className="full">
+            Nueva contraseña
+            <input name="password" type="password" required minLength={12} autoFocus />
+            <small>Mínimo 12 caracteres. Se cerrará su sesión activa.</small>
+          </label>
+          {resetPassword.error && <div className="form-error">{resetPassword.error.message}</div>}
+        </Modal>
       )}
     </Page>
   );
@@ -1240,93 +1251,93 @@ export function CatalogPage() {
       </section>
 
       {showLocationForm && (
-        <div className="modal-backdrop" role="presentation">
-          <form
-            className="modal"
-            key={editingLocation?.id ?? "new-location"}
-            onSubmit={(event) => {
-              event.preventDefault();
-              const form = new FormData(event.currentTarget);
-              saveLocation.mutate({ name: String(form.get("name")), code: String(form.get("code")) });
-            }}
-          >
-            <div className="modal-heading">
-              <div><h2>{editingLocation ? "Editar sucursal" : "Nueva sucursal"}</h2></div>
-              <button type="button" className="icon-button" onClick={() => setShowLocationForm(false)}><IconX /></button>
-            </div>
-            <div className="modal-body">
-              <label>Nombre<input name="name" required minLength={2} autoFocus defaultValue={editingLocation?.name} /></label>
-              <label>Código<input name="code" required maxLength={12} defaultValue={editingLocation?.code} /></label>
-              {saveLocation.error && <div className="form-error">{saveLocation.error.message}</div>}
-            </div>
-            <div className="modal-actions">
+        <Modal
+          key={editingLocation?.id ?? "new-location"}
+          title={editingLocation ? "Editar sucursal" : "Nueva sucursal"}
+          description="Nombre visible y código corto para las etiquetas."
+          onClose={() => setShowLocationForm(false)}
+          onSubmit={(event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            saveLocation.mutate({ name: String(form.get("name")), code: String(form.get("code")) });
+          }}
+          actions={
+            <>
               <button type="button" className="button ghost" onClick={() => setShowLocationForm(false)}>Cancelar</button>
-              <button className="button primary" disabled={saveLocation.isPending}>{editingLocation ? "Guardar cambios" : "Crear"}</button>
-            </div>
-          </form>
-        </div>
+              <button className="button primary" disabled={saveLocation.isPending}>
+                {editingLocation ? "Guardar cambios" : "Crear sucursal"}
+              </button>
+            </>
+          }
+        >
+          <div className="form-grid">
+            <label>Nombre<input name="name" required minLength={2} autoFocus defaultValue={editingLocation?.name} /></label>
+            <label>Código<input name="code" required maxLength={12} defaultValue={editingLocation?.code} /></label>
+          </div>
+          {saveLocation.error && <div className="form-error">{saveLocation.error.message}</div>}
+        </Modal>
       )}
 
       {showCategoryForm && (
-        <div className="modal-backdrop" role="presentation">
-          <form
-            className="modal"
-            key={editingCategory?.id ?? "new-category"}
-            onSubmit={(event) => {
-              event.preventDefault();
-              const form = new FormData(event.currentTarget);
-              saveCategory.mutate({ name: String(form.get("name")) });
-            }}
-          >
-            <div className="modal-heading">
-              <div><h2>{editingCategory ? "Editar categoría" : "Nueva categoría"}</h2></div>
-              <button type="button" className="icon-button" onClick={() => setShowCategoryForm(false)}><IconX /></button>
-            </div>
-            <div className="modal-body">
-              <label>Nombre<input name="name" required minLength={2} autoFocus defaultValue={editingCategory?.name} /></label>
-              {saveCategory.error && <div className="form-error">{saveCategory.error.message}</div>}
-            </div>
-            <div className="modal-actions">
+        <Modal
+          key={editingCategory?.id ?? "new-category"}
+          title={editingCategory ? "Editar categoría" : "Nueva categoría"}
+          onClose={() => setShowCategoryForm(false)}
+          onSubmit={(event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            saveCategory.mutate({ name: String(form.get("name")) });
+          }}
+          actions={
+            <>
               <button type="button" className="button ghost" onClick={() => setShowCategoryForm(false)}>Cancelar</button>
-              <button className="button primary" disabled={saveCategory.isPending}>{editingCategory ? "Guardar cambios" : "Crear"}</button>
-            </div>
-          </form>
-        </div>
+              <button className="button primary" disabled={saveCategory.isPending}>
+                {editingCategory ? "Guardar cambios" : "Crear categoría"}
+              </button>
+            </>
+          }
+        >
+          <label className="full">Nombre<input name="name" required minLength={2} autoFocus defaultValue={editingCategory?.name} /></label>
+          {saveCategory.error && <div className="form-error">{saveCategory.error.message}</div>}
+        </Modal>
       )}
 
       {showUnitForm && (
-        <div className="modal-backdrop" role="presentation">
-          <form
-            className="modal"
-            key={editingUnit?.id ?? "new-unit"}
-            onSubmit={(event) => {
-              event.preventDefault();
-              const form = new FormData(event.currentTarget);
-              const allowDecimals = form.get("allowDecimals") === "on";
-              saveUnit.mutate({
-                name: String(form.get("name")),
-                symbol: String(form.get("symbol")),
-                allowDecimals,
-                decimalPlaces: allowDecimals ? 2 : 0
-              });
-            }}
-          >
-            <div className="modal-heading">
-              <div><h2>{editingUnit ? "Editar unidad" : "Nueva unidad"}</h2></div>
-              <button type="button" className="icon-button" onClick={() => setShowUnitForm(false)}><IconX /></button>
-            </div>
-            <div className="modal-body">
-              <label>Nombre<input name="name" required minLength={2} autoFocus defaultValue={editingUnit?.name} /></label>
-              <label>Símbolo<input name="symbol" required maxLength={6} defaultValue={editingUnit?.symbol} /></label>
-              <label className="checkbox-field"><input type="checkbox" name="allowDecimals" defaultChecked={editingUnit?.allowDecimals} /> Permite decimales</label>
-              {saveUnit.error && <div className="form-error">{saveUnit.error.message}</div>}
-            </div>
-            <div className="modal-actions">
+        <Modal
+          key={editingUnit?.id ?? "new-unit"}
+          title={editingUnit ? "Editar unidad" : "Nueva unidad"}
+          description="El símbolo es lo que se muestra junto a cada cantidad."
+          onClose={() => setShowUnitForm(false)}
+          onSubmit={(event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            const allowDecimals = form.get("allowDecimals") === "on";
+            saveUnit.mutate({
+              name: String(form.get("name")),
+              symbol: String(form.get("symbol")),
+              allowDecimals,
+              decimalPlaces: allowDecimals ? 2 : 0
+            });
+          }}
+          actions={
+            <>
               <button type="button" className="button ghost" onClick={() => setShowUnitForm(false)}>Cancelar</button>
-              <button className="button primary" disabled={saveUnit.isPending}>{editingUnit ? "Guardar cambios" : "Crear"}</button>
-            </div>
-          </form>
-        </div>
+              <button className="button primary" disabled={saveUnit.isPending}>
+                {editingUnit ? "Guardar cambios" : "Crear unidad"}
+              </button>
+            </>
+          }
+        >
+          <div className="form-grid">
+            <label>Nombre<input name="name" required minLength={2} autoFocus defaultValue={editingUnit?.name} /></label>
+            <label>Símbolo<input name="symbol" required maxLength={6} defaultValue={editingUnit?.symbol} /></label>
+          </div>
+          <label className="checkbox-field full">
+            <input type="checkbox" name="allowDecimals" defaultChecked={editingUnit?.allowDecimals} />
+            Permite decimales
+          </label>
+          {saveUnit.error && <div className="form-error">{saveUnit.error.message}</div>}
+        </Modal>
       )}
     </Page>
   );

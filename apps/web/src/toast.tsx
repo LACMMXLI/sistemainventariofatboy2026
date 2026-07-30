@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode
 } from "react";
+import { createPortal } from "react-dom";
 import {
   IconAlertTriangle,
   IconCircleCheck,
@@ -104,29 +105,34 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <div className="toast-viewport" role="region" aria-label="Notificaciones" aria-live="polite">
-        {toasts.map((toast) => {
-          const Icon = icons[toast.tone];
-          return (
-            <article className={`toast ${toast.tone}${toast.leaving ? " leaving" : ""}`} key={toast.id}>
-              <span className="toast-icon"><Icon size={19} /></span>
-              <div className="toast-body">
-                <strong>{toast.title}</strong>
-                {toast.detail && <span>{toast.detail}</span>}
-              </div>
-              <button
-                type="button"
-                className="toast-close"
-                onClick={() => dismiss(toast.id)}
-                aria-label="Cerrar notificación"
-              >
-                <IconX size={15} />
-              </button>
-              <i className="toast-progress" style={{ animationDuration: `${toast.duration}ms` }} />
-            </article>
-          );
-        })}
-      </div>
+      {/* En portal sobre body: dentro del árbol hay contenedores con transform
+          y backdrop-filter que reanclarían este `position: fixed`. */}
+      {createPortal(
+        <div className="toast-viewport" role="region" aria-label="Notificaciones" aria-live="polite">
+          {toasts.map((toast) => {
+            const Icon = icons[toast.tone];
+            return (
+              <article className={`toast ${toast.tone}${toast.leaving ? " leaving" : ""}`} key={toast.id}>
+                <span className="toast-icon"><Icon size={18} /></span>
+                <div className="toast-body">
+                  <strong>{toast.title}</strong>
+                  {toast.detail && <span>{toast.detail}</span>}
+                </div>
+                <button
+                  type="button"
+                  className="toast-close"
+                  onClick={() => dismiss(toast.id)}
+                  aria-label="Cerrar notificación"
+                >
+                  <IconX size={15} />
+                </button>
+                <i className="toast-progress" style={{ animationDuration: `${toast.duration}ms` }} />
+              </article>
+            );
+          })}
+        </div>,
+        document.body
+      )}
     </ToastContext.Provider>
   );
 }
