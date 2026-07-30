@@ -415,7 +415,7 @@ function Stepper({
     <div className="stepper">
       <button
         type="button"
-        className="stepper-button"
+        className="stepper-button minus"
         aria-label={`Restar a ${label}`}
         disabled={Number(value === "" ? 0 : value) <= min}
         onClick={() => bump(-1)}
@@ -435,7 +435,7 @@ function Stepper({
       />
       <button
         type="button"
-        className="stepper-button"
+        className="stepper-button plus"
         aria-label={`Sumar a ${label}`}
         onClick={() => bump(1)}
       >

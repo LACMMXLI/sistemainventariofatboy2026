@@ -890,6 +890,8 @@ small > .folio { color: color-mix(in srgb, var(--primary) 78%, var(--muted)); }
 }
 
 .table { display: grid; min-width: 760px; }
+/* Las tarjetas son la versión móvil de la tabla: en escritorio no se muestran. */
+.mobile-list { display: none; }
 .table-head,
 .table-row { display: grid; align-items: center; gap: 16px; padding: 10px 15px; }
 .products-table { min-width: 940px; }
@@ -1294,10 +1296,29 @@ small > .folio { color: color-mix(in srgb, var(--primary) 78%, var(--muted)); }
   transition: border-color var(--t-fast) var(--ease-soft), background var(--t-fast) var(--ease-soft),
     transform var(--t-fast) var(--ease);
 }
-.stepper-button:hover:not(:disabled) { border-color: var(--primary); background: var(--surface-3, var(--surface)); }
 .stepper-button:active:not(:disabled) { transform: scale(0.92); }
-.stepper-button:focus-visible { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-wash); }
-.stepper-button:disabled { opacity: 0.35; cursor: not-allowed; }
+.stepper-button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.18); }
+.stepper-button:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* Verde suma, rojo resta: se distinguen de un vistazo sin leer el signo. */
+.stepper-button.plus {
+  color: #6ddb92;
+  background: var(--success-wash);
+  border-color: rgba(47, 191, 113, 0.4);
+}
+.stepper-button.plus:hover:not(:disabled) {
+  background: rgba(47, 191, 113, 0.24);
+  border-color: var(--success);
+}
+.stepper-button.minus {
+  color: #ff8a90;
+  background: var(--danger-wash);
+  border-color: rgba(239, 77, 85, 0.4);
+}
+.stepper-button.minus:hover:not(:disabled) {
+  background: rgba(239, 77, 85, 0.24);
+  border-color: var(--danger);
+}
 
 .delta {
   display: inline-block;
