@@ -60,6 +60,12 @@ export class OperationsController {
     );
   }
 
+  /// Comparativo del conteo (esperado vs. físico). Solo responde si ya se cerró.
+  @Get("counts/:id/result")
+  countResult(@Req() request: AuthRequest, @Param("id") id: string) {
+    return this.operations.countResult(request.user, id);
+  }
+
   @Get("counts/:id/validate")
   preCompleteCount(
     @Req() request: AuthRequest,

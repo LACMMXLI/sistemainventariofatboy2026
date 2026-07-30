@@ -166,14 +166,18 @@ export class OperationsService {
             }))
           }
         },
-        include: {
-          location: true,
-          lines: { include: { product: { include: { unit: true, category: true } } } }
-        }
+        // Sin líneas: el stock esperado no debe salir del servidor durante la
+        // captura. La pantalla de conteo las pide con getCount.
+        include: { location: true, _count: { select: { lines: true } } }
       });
     });
   }
 
+  /**
+   * Conteo ciego: mientras se captura, la respuesta no lleva el stock esperado
+   * ni nada derivado de él. El comparativo vive en `countResult`, que solo
+   * responde cuando el conteo ya se cerró.
+   */
   async getCount(user: AuthUser, id: string) {
     const count = await this.prisma.stockCount.findUnique({
       where: { id },
@@ -187,7 +191,60 @@ export class OperationsService {
     });
     if (!count) throw new NotFoundException("Conteo no encontrado");
     this.assertLocation(user, count.locationId);
-    return count;
+
+    const { lines, ...rest } = count;
+    return {
+      ...rest,
+      lines: lines.map(({ snapshotQuantity, movementVersionAtCount, ...line }) => line)
+    };
+  }
+
+  /** Resultado del conteo: solo existe una vez confirmado. */
+  async countResult(user: AuthUser, id: string) {
+    const count = await this.prisma.stockCount.findUnique({
+      where: { id },
+      include: {
+        location: true,
+        completedBy: { select: { id: true, name: true } },
+        lines: {
+          include: { product: { include: { unit: true, category: true } } },
+          orderBy: { product: { name: "asc" } }
+        }
+      }
+    });
+    if (!count) throw new NotFoundException("Conteo no encontrado");
+    this.assertLocation(user, count.locationId);
+    if (count.status === "IN_PROGRESS") {
+      throw new ConflictException("El conteo sigue en captura: el comparativo se libera al confirmarlo");
+    }
+
+    const lines = count.lines.map((line) => ({
+      id: line.id,
+      productId: line.productId,
+      productName: line.product.name,
+      unitSymbol: line.product.unit.symbol,
+      imageUrl: line.product.imageUrl,
+      expectedQuantity: line.snapshotQuantity,
+      countedQuantity: line.countedQuantity,
+      difference:
+        line.countedQuantity === null ? null : line.countedQuantity.minus(line.snapshotQuantity),
+      countNotes: line.countNotes
+    }));
+
+    return {
+      id: count.id,
+      folio: count.folio,
+      status: count.status,
+      location: count.location,
+      startedAt: count.startedAt,
+      completedAt: count.completedAt,
+      completedBy: count.completedBy,
+      lines,
+      totals: {
+        products: lines.length,
+        withDifference: lines.filter((line) => line.difference && !line.difference.isZero()).length
+      }
+    };
   }
 
   async updateCountLine(
@@ -248,23 +305,14 @@ export class OperationsService {
       throw new ConflictException("El conteo ya fue procesado");
     }
 
+    // Conteo ciego: la revisión previa solo dice si falta capturar algo. El
+    // comparativo contra el sistema se entrega hasta que el conteo se confirma.
     const pending = count.lines.filter((line) => line.countedQuantity === null);
-    const adjustments = count.lines
-      .filter((line) => line.countedQuantity !== null)
-      .map((line) => {
-        const delta = countAdjustment(line.snapshotQuantity, line.countedQuantity!);
-        return {
-          productId: line.productId,
-          productName: line.product.name,
-          delta,
-          newBalance: line.snapshotQuantity.plus(delta)
-        };
-      })
-      .filter((adj) => !adj.delta.isZero());
 
     return {
       valid: pending.length === 0,
-      adjustments,
+      totalLines: count.lines.length,
+      capturedLines: count.lines.length - pending.length,
       issues: pending.map((line) => `Producto ${line.product.name} aún no contado`)
     };
   }

@@ -40,7 +40,8 @@ export type InventoryRow = {
 export type CountLine = {
   id: string;
   productId: string;
-  snapshotQuantity: string;
+  /** Solo llega con el conteo ya cerrado: durante la captura es ciego. */
+  snapshotQuantity?: string;
   countedQuantity: string | null;
   countNotes?: string | null;
   status: "PENDING" | "COUNTED";

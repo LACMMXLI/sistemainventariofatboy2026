@@ -578,15 +578,27 @@ export function CountsPage() {
       {active && <section className="panel active-count"><div><span className="eyebrow">CONTEO EN PROGRESO</span><h2>{active.location.name}</h2><p>Continúa donde te quedaste. Los cambios se guardan producto por producto.</p></div><button className="button primary" onClick={() => navigate(`/conteos/${active.id}`)}>Continuar</button></section>}
       <section className="panel data-panel">
         <h2>Historial</h2>
-        {counts.length ? counts.map((count) => <article className="list-row" key={count.id}><div><strong>{count.location.name}</strong><small><span className="folio">{count.folio}</span> · {date(count.startedAt)} · {count._count?.lines ?? 0} productos</small></div><Status value={count.status} /></article>) : <Empty>No hay conteos registrados.</Empty>}
+        {counts.length ? counts.map((count) => <article className="list-row" key={count.id}><div><strong>{count.location.name}</strong><small><span className="folio">{count.folio}</span> · {date(count.startedAt)} · {count._count?.lines ?? 0} productos</small></div><Status value={count.status} />{count.status !== "IN_PROGRESS" && <button className="button ghost" onClick={() => navigate(`/conteos/${count.id}`)}>Ver resultado</button>}</article>) : <Empty>No hay conteos registrados.</Empty>}
       </section>
     </Page>
   );
 }
 
 export function CountCapturePage() {
-  const { path, navigate } = useRouter();
+  const { path } = useRouter();
   const id = path.split("/")[2] ?? "";
+  const { data: count } = useQuery({
+    queryKey: ["count", id],
+    queryFn: () => api.get<StockCount>(`/counts/${id}`)
+  });
+  if (!count) return <Skeleton rows={6} />;
+  // El comparativo contra el sistema solo existe con el conteo ya cerrado.
+  return count.status === "IN_PROGRESS" ? <CountBlindCapture id={id} /> : <CountResultPage id={id} />;
+}
+
+/** Captura ciega: el trabajador nunca ve el stock que el sistema espera. */
+function CountBlindCapture({ id }: { id: string }) {
+  const { navigate } = useRouter();
   const client = useQueryClient();
   const toast = useToast();
   const [filter, setFilter] = useState<"ALL" | "PENDING" | "COUNTED">("ALL");
@@ -633,7 +645,7 @@ export function CountCapturePage() {
       void client.invalidateQueries({ queryKey: ["counts"] });
       void client.invalidateQueries({ queryKey: ["inventory"] });
       toast.success({ title: "Conteo confirmado", detail: "El stock quedó actualizado con lo capturado." });
-      navigate("/conteos");
+      navigate(`/conteos/${id}`);
     },
     onError: (cause) => toast.error({ title: "No se pudo confirmar", detail: errorMessage(cause) })
   });
@@ -663,10 +675,10 @@ export function CountCapturePage() {
       </div>
       {showValidation && validation && (
         <Modal
-          title={validation.valid ? "Resumen del conteo" : "Errores detectados"}
+          title={validation.valid ? "Confirmar conteo" : "Faltan productos"}
           description={
             validation.valid
-              ? `${validation.adjustments.length} producto(s) ajustarán su stock al confirmar.`
+              ? `${validation.capturedLines} de ${validation.totalLines} productos capturados. Al confirmar se aplica el ajuste y podrás ver el comparativo contra el sistema.`
               : "Corrige lo siguiente antes de confirmar."
           }
           size="wide"
@@ -687,27 +699,101 @@ export function CountCapturePage() {
           {!validation.valid && validation.issues.length > 0 && (
             <div className="form-error">{validation.issues.map((issue: string) => <div key={issue}>{issue}</div>)}</div>
           )}
-          {validation.adjustments.length > 0 ? (
-            <div className="table-scroll">
-              <table className="adjustments-table">
-                <thead><tr><th>Producto</th><th>Diferencia</th><th>Stock nuevo</th></tr></thead>
-                <tbody>
-                  {validation.adjustments.map((adj: any) => (
-                    <tr key={adj.productId}>
-                      <td>{adj.productName}</td>
-                      <td className={adj.delta.startsWith("-") ? "negative" : "positive"}>{adj.delta}</td>
-                      <td>{quantity(adj.newBalance)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : validation.valid ? (
-            <p className="muted">El conteo coincide con el stock registrado. No hay ajustes que aplicar.</p>
-          ) : null}
+          {validation.valid && (
+            <p className="muted">
+              Revisa que hayas capturado lo que ves en piso. Después de confirmar ya no se puede editar.
+            </p>
+          )}
           {complete.error && <div className="form-error">{complete.error.message}</div>}
         </Modal>
       )}
+    </Page>
+  );
+}
+
+type CountResultLine = {
+  id: string;
+  productName: string;
+  unitSymbol: string;
+  imageUrl?: string | null;
+  expectedQuantity: string;
+  countedQuantity: string | null;
+  difference: string | null;
+};
+
+type CountResult = {
+  folio: string;
+  status: string;
+  location: Location;
+  completedAt?: string | null;
+  completedBy?: { id: string; name: string } | null;
+  lines: CountResultLine[];
+  totals: { products: number; withDifference: number };
+};
+
+/** Comparativo del conteo, disponible solo cuando ya se confirmó. */
+function CountResultPage({ id }: { id: string }) {
+  const { navigate } = useRouter();
+  const [onlyDifferences, setOnlyDifferences] = useState(false);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["count-result", id],
+    queryFn: () => api.get<CountResult>(`/counts/${id}/result`)
+  });
+
+  if (isLoading) return <Skeleton rows={6} />;
+  if (error || !data) {
+    return (
+      <Page icon={<IconClipboardCheck />} title="Resultado del conteo" subtitle="No disponible">
+        <Empty>{errorMessage(error, "No pudimos cargar el resultado.")}</Empty>
+      </Page>
+    );
+  }
+
+  const visible = onlyDifferences
+    ? data.lines.filter((line) => Number(line.difference ?? 0) !== 0)
+    : data.lines;
+
+  return (
+    <Page
+      icon={<IconClipboardCheck />}
+      title="Resultado del conteo"
+      subtitle={`${data.location.name} · ${data.folio}`}
+      action={<button className="button ghost" onClick={() => navigate("/conteos")}>Volver a conteos</button>}
+    >
+      <section className="kpi-grid">
+        <Kpi label="Productos contados" value={data.totals.products} icon={<IconClipboardCheck size={25} />} color="blue" />
+        <Kpi label="Con diferencia" value={data.totals.withDifference} icon={<IconAlertTriangle size={25} />} color="orange" />
+      </section>
+      <div className="tabs">
+        <button className={onlyDifferences ? "" : "active"} onClick={() => setOnlyDifferences(false)}>Todos</button>
+        <button className={onlyDifferences ? "active" : ""} onClick={() => setOnlyDifferences(true)}>Solo diferencias</button>
+      </div>
+      <section className="panel data-panel scroll-panel">
+        {visible.length ? (
+          <div className="table-scroll">
+            <table className="adjustments-table">
+              <thead>
+                <tr><th>Producto</th><th>Stock sistema</th><th>Conteo físico</th><th>Diferencia</th></tr>
+              </thead>
+              <tbody>
+                {visible.map((line) => {
+                  const diff = Number(line.difference ?? 0);
+                  return (
+                    <tr key={line.id}>
+                      <td>{line.productName} <small className="muted">{line.unitSymbol}</small></td>
+                      <td>{quantity(line.expectedQuantity)}</td>
+                      <td>{line.countedQuantity === null ? "—" : quantity(line.countedQuantity)}</td>
+                      <td className={diff === 0 ? "" : diff > 0 ? "positive" : "negative"}>
+                        {diff > 0 ? "+" : ""}{quantity(line.difference ?? 0)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : <Empty>El conteo coincidió con el stock registrado.</Empty>}
+      </section>
     </Page>
   );
 }
@@ -777,18 +863,20 @@ function CountInput({ countId, line, onSaved, onQueued }: { countId: string; lin
     }
   }
 
-  const delta = line.countedQuantity ? Number(line.countedQuantity) - Number(line.snapshotQuantity) : null;
-  const deltaClass = delta === null ? "" : delta === 0 ? "neutral" : delta > 0 ? "positive" : "negative";
-
+  // Conteo ciego: aquí no se calcula ni se muestra nada contra el stock del
+  // sistema. Solo producto, unidad, cantidad física y estado de captura.
   return (
     <article className="count-row">
+      <span className="count-thumb">
+        {line.product.imageUrl ? <img src={line.product.imageUrl} alt="" /> : <IconBox size={22} />}
+      </span>
       <div>
         <strong>{line.product.name}</strong>
-        <small>Esperado: {quantity(line.snapshotQuantity)} {line.product.unit.symbol}</small>
+        <small>Unidad: {line.product.unit.name}</small>
       </div>
       <div className="count-input-group">
         <Stepper
-          label={`Cantidad de ${line.product.name}`}
+          label={`Cantidad física de ${line.product.name}`}
           value={value}
           allowDecimals={line.product.unit.allowDecimals}
           onChange={setValue}
@@ -797,7 +885,6 @@ function CountInput({ countId, line, onSaved, onQueued }: { countId: string; lin
             scheduleSave(next);
           }}
         />
-        {delta !== null && <span className={`delta ${deltaClass}`}>{delta > 0 ? "+" : ""}{quantity(delta)}</span>}
       </div>
       {notes && <small className="count-notes">{notes}</small>}
       <span className={`save-indicator ${state}`}>{state === "saving" ? "Guardando…" : state === "queued" ? "Pendiente" : value !== "" ? <><IconCircleCheck size={18} />Guardado</> : "Pendiente"}</span>
