@@ -1223,7 +1223,7 @@ small > .folio { color: color-mix(in srgb, var(--primary) 78%, var(--muted)); }
 .count-list { display: grid; gap: 9px; padding-bottom: 110px; }
 .count-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 148px 110px;
+  grid-template-columns: minmax(170px, 1fr) 200px 100px;
   align-items: center;
   gap: 15px;
   min-height: 78px;
@@ -1271,6 +1271,33 @@ small > .folio { color: color-mix(in srgb, var(--primary) 78%, var(--muted)); }
 .count-input-group { display: flex; align-items: center; gap: 9px; }
 .count-input-group input { flex: 1; }
 .count-input-group label { display: block; flex: 1; }
+
+/* Captura táctil: los botones son el camino principal, el campo queda para teclear. */
+.stepper { display: flex; align-items: center; gap: 7px; width: 100%; }
+.stepper input { flex: 1; min-width: 0; }
+.stepper input::-webkit-outer-spin-button,
+.stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.stepper input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+.stepper-button {
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color var(--t-fast) var(--ease-soft), background var(--t-fast) var(--ease-soft),
+    transform var(--t-fast) var(--ease);
+}
+.stepper-button:hover:not(:disabled) { border-color: var(--primary); background: var(--surface-3, var(--surface)); }
+.stepper-button:active:not(:disabled) { transform: scale(0.92); }
+.stepper-button:focus-visible { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-wash); }
+.stepper-button:disabled { opacity: 0.35; cursor: not-allowed; }
 
 .delta {
   display: inline-block;
@@ -1373,7 +1400,7 @@ small > .folio { color: color-mix(in srgb, var(--primary) 78%, var(--muted)); }
 .reception-line {
   min-height: 68px;
   display: grid;
-  grid-template-columns: 1fr 130px;
+  grid-template-columns: 1fr 200px;
   align-items: center;
   gap: 15px;
   padding: 10px 8px;
@@ -1385,7 +1412,7 @@ small > .folio { color: color-mix(in srgb, var(--primary) 78%, var(--muted)); }
 .reception-line:hover { background: var(--surface); }
 .request-line > span,
 .reception-line > span { display: grid; gap: 3px; min-width: 0; }
-.reception-line { grid-template-columns: 1fr 190px; }
+.reception-line { grid-template-columns: 1fr 215px; }
 .reception-line > span:last-child { gap: 6px; font-size: 0.72rem; color: var(--muted); }
 
 .sticky-submit {
@@ -2286,8 +2313,10 @@ input[type="checkbox"] {
   .tabs button { flex: 1; padding: 11px 8px; font-size: 0.85rem; }
 
   .request-builder { margin: 0 0 86px; }
-  .request-line { grid-template-columns: 1fr 92px; }
-  .reception-line { grid-template-columns: 1fr 118px; }
+  .request-line { grid-template-columns: 1fr 160px; }
+  .reception-line { grid-template-columns: 1fr 170px; }
+  .stepper { gap: 5px; }
+  .stepper-button { width: 44px; height: 44px; }
   .reception-line > span:last-child { grid-template-columns: 1fr; font-size: 0.7rem; }
   .incident-row { align-items: flex-start; flex-wrap: wrap; }
   .incident-row .button { margin-left: auto; }

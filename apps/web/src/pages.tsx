@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   IconAlertTriangle,
@@ -10,6 +10,7 @@ import {
   IconClipboardCheck,
   IconFileAnalytics,
   IconKey,
+  IconMinus,
   IconPackageExport,
   IconPackageImport,
   IconPencil,
@@ -380,6 +381,70 @@ export function InventoryPage() {
   );
 }
 
+/**
+ * Captura táctil de cantidades: los botones cubren el uso normal (piso, celular
+ * en mano) y el campo sigue abierto para teclear una cantidad grande o decimal.
+ */
+function Stepper({
+  value,
+  onChange,
+  onCommit,
+  allowDecimals = false,
+  label,
+  min = 0
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  onCommit?: (next: string) => void;
+  allowDecimals?: boolean;
+  label: string;
+  min?: number;
+}) {
+  const step = allowDecimals ? 0.5 : 1;
+
+  function bump(direction: 1 | -1) {
+    const current = Number(value === "" ? 0 : value);
+    const base = Number.isFinite(current) ? current : 0;
+    const next = Math.max(min, Number((base + direction * step).toFixed(allowDecimals ? 2 : 0)));
+    const text = String(next);
+    onChange(text);
+    onCommit?.(text);
+  }
+
+  return (
+    <div className="stepper">
+      <button
+        type="button"
+        className="stepper-button"
+        aria-label={`Restar a ${label}`}
+        disabled={Number(value === "" ? 0 : value) <= min}
+        onClick={() => bump(-1)}
+      >
+        <IconMinus size={20} />
+      </button>
+      <input
+        type="number"
+        inputMode="decimal"
+        min={min}
+        step={allowDecimals ? "0.01" : "1"}
+        placeholder="0"
+        aria-label={label}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onBlur={(event) => onCommit?.(event.target.value)}
+      />
+      <button
+        type="button"
+        className="stepper-button"
+        aria-label={`Sumar a ${label}`}
+        onClick={() => bump(1)}
+      >
+        <IconPlus size={20} />
+      </button>
+    </div>
+  );
+}
+
 /** Alta de mercancía comprada: entra al stock de una sucursal y desde ahí puede surtirse. */
 export function PurchasesPage() {
   const { locationId, locations } = useApp();
@@ -450,18 +515,15 @@ export function PurchasesPage() {
       <section className="panel request-builder">
         {isLoading ? <Skeleton rows={6} /> : visible.length ? (
           visible.map((product) => (
-            <label className="request-line" key={product.id}>
+            <div className="request-line" key={product.id}>
               <span><strong>{product.name}</strong><small>{product.unit.symbol}</small></span>
-              <input
-                type="number"
-                min="0"
-                step={product.unit.allowDecimals ? "0.01" : "1"}
-                inputMode="decimal"
-                placeholder="0"
+              <Stepper
+                label={`Cantidad de ${product.name}`}
                 value={amounts[product.id] ?? ""}
-                onChange={(event) => setAmounts({ ...amounts, [product.id]: event.target.value })}
+                allowDecimals={product.unit.allowDecimals}
+                onChange={(next) => setAmounts({ ...amounts, [product.id]: next })}
               />
-            </label>
+            </div>
           ))
         ) : <Empty>No hay productos que coincidan.</Empty>}
         <div className="sticky-submit">
@@ -645,22 +707,46 @@ function CountInput({ countId, line, onSaved, onQueued }: { countId: string; lin
   const [value, setValue] = useState(line.countedQuantity ?? "");
   const [notes, setNotes] = useState(line.countNotes ?? "");
   const [state, setState] = useState<"idle" | "saving" | "saved" | "queued">("idle");
+  // La versión viaja en cada guardado; la mantenemos al día localmente para que
+  // varios toques seguidos no choquen entre sí.
+  const version = useRef(line.version);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  async function save() {
-    if (value === "") return;
+  useEffect(() => {
+    version.current = line.version;
+  }, [line.version]);
+
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+
+  /** Agrupa los toques rápidos en un solo guardado. */
+  function scheduleSave(next: string) {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => void save(next), 600);
+  }
+
+  async function save(override?: string) {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+    const quantityToSave = override ?? value;
+    if (quantityToSave === "") return;
     const draft = {
       id: `${countId}:${line.id}`,
       countId,
       lineId: line.id,
-      countedQuantity: value,
+      countedQuantity: quantityToSave,
       notes: notes || undefined,
-      version: line.version,
+      version: version.current,
       clientMutationId: crypto.randomUUID(),
       createdAt: Date.now()
     };
     setState("saving");
     try {
-      await api.patch(`/counts/${countId}/lines/${line.id}`, draft);
+      const saved = await api.patch<CountLine>(`/counts/${countId}/lines/${line.id}`, draft);
+      if (saved?.version !== undefined) version.current = saved.version;
       await removeDraft(draft.id);
       setState("saved");
       onSaved();
@@ -691,7 +777,16 @@ function CountInput({ countId, line, onSaved, onQueued }: { countId: string; lin
         <small>Esperado: {quantity(line.snapshotQuantity)} {line.product.unit.symbol}</small>
       </div>
       <div className="count-input-group">
-        <label><span className="sr-only">Cantidad de {line.product.name}</span><input inputMode="decimal" type="number" min="0" step={line.product.unit.allowDecimals ? "0.01" : "1"} value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => void save()} /></label>
+        <Stepper
+          label={`Cantidad de ${line.product.name}`}
+          value={value}
+          allowDecimals={line.product.unit.allowDecimals}
+          onChange={setValue}
+          onCommit={(next) => {
+            setValue(next);
+            scheduleSave(next);
+          }}
+        />
         {delta !== null && <span className={`delta ${deltaClass}`}>{delta > 0 ? "+" : ""}{quantity(delta)}</span>}
       </div>
       {notes && <small className="count-notes">{notes}</small>}
@@ -751,7 +846,7 @@ export function RequestsPage() {
   });
   return (
     <Page icon={<IconReceipt />} title="Solicitudes" subtitle="Productos requeridos por la sucursal" action={<button className="button primary" onClick={() => setCreating(true)}><IconPlus size={19} />Nueva solicitud</button>}>
-      {creating && <section className="panel request-builder"><div className="section-heading"><div><h2>Nueva solicitud</h2><p>Captura únicamente lo que necesita la sucursal.</p></div><button className="icon-button" onClick={() => setCreating(false)}><IconX /></button></div>{products.map((product) => <label className="request-line" key={product.id}><span><strong>{product.name}</strong><small>{product.unit.symbol}</small></span><input type="number" min="0" step={product.unit.allowDecimals ? "0.01" : "1"} inputMode="decimal" placeholder="0" value={amounts[product.id] ?? ""} onChange={(event) => setAmounts({ ...amounts, [product.id]: event.target.value })} /></label>)}<div className="sticky-submit"><button className="button primary" disabled={!Object.values(amounts).some((value) => Number(value) > 0) || create.isPending} onClick={() => create.mutate()}>Enviar solicitud</button></div>{create.error && <div className="form-error">{create.error.message}</div>}</section>}
+      {creating && <section className="panel request-builder"><div className="section-heading"><div><h2>Nueva solicitud</h2><p>Captura únicamente lo que necesita la sucursal.</p></div><button className="icon-button" onClick={() => setCreating(false)}><IconX /></button></div>{products.map((product) => <div className="request-line" key={product.id}><span><strong>{product.name}</strong><small>{product.unit.symbol}</small></span><Stepper label={`Cantidad de ${product.name}`} value={amounts[product.id] ?? ""} allowDecimals={product.unit.allowDecimals} onChange={(next) => setAmounts({ ...amounts, [product.id]: next })} /></div>)}<div className="sticky-submit"><button className="button primary" disabled={!Object.values(amounts).some((value) => Number(value) > 0) || create.isPending} onClick={() => create.mutate()}>Enviar solicitud</button></div>{create.error && <div className="form-error">{create.error.message}</div>}</section>}
       <section className="panel data-panel">{requests.length ? requests.map((request) => <article className="list-row" key={request.id}><div><strong><span className="folio">{request.folio}</span></strong><small>{request.location.name} · {request.lines.length} productos · {date(request.createdAt)}</small></div><Status value={request.status} />{["SYSTEM_OWNER", "ADMIN"].includes(user.role) && ["PENDING", "PARTIAL"].includes(request.status) && <button className="button ghost" disabled={createTransfer.isPending} onClick={() => createTransfer.mutate(request)}>Crear surtido</button>}</article>) : <Empty>No hay solicitudes registradas.</Empty>}</section>
     </Page>
   );
@@ -822,7 +917,7 @@ export function TransfersPage({ driverMode = false }: { driverMode?: boolean }) 
   const isDriverView = driverMode || user.role === "DRIVER";
   return (
     <Page icon={isDriverView ? <IconTruck /> : <IconPackageExport />} title={isDriverView ? "Mis entregas" : "Surtidos"} subtitle={isDriverView ? "Entregas asignadas a tu usuario" : "Preparación y seguimiento de producto"} action={!driverMode && !["DRIVER", "MANAGER"].includes(user.role) && <button className="button primary" onClick={() => setCreating(true)}><IconPlus size={19} />Crear surtido</button>}>
-      {creating && <section className="panel request-builder"><div className="section-heading"><div><h2>Nuevo surtido</h2><p>Selecciona origen y destino, luego agrega productos.</p></div><button className="icon-button" onClick={() => setCreating(false)}><IconX /></button></div><div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px"}}><label>Origen<select value={source} onChange={(event) => setSource(event.target.value)}><option value="">Selecciona</option>{locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Destino<select value={destination} onChange={(event) => setDestination(event.target.value)}><option value="">Selecciona</option>{locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>{products.map((product) => <label className="request-line" key={product.id}><span><strong>{product.name}</strong><small>{product.unit.symbol}</small></span><input type="number" min="0" inputMode="decimal" placeholder="0" value={amounts[product.id] ?? ""} onChange={(event) => setAmounts({ ...amounts, [product.id]: event.target.value })} /></label>)}<div className="sticky-submit"><button className="button primary" disabled={!source || !destination || !Object.values(amounts).some((value) => Number(value) > 0) || create.isPending} onClick={() => create.mutate()}>{create.isPending ? "Preparando..." : "Preparar surtido"}</button></div>{create.error && <div className="form-error">{typeof create.error.message === 'string' ? create.error.message : JSON.stringify(create.error.message)}</div>}</section>}
+      {creating && <section className="panel request-builder"><div className="section-heading"><div><h2>Nuevo surtido</h2><p>Selecciona origen y destino, luego agrega productos.</p></div><button className="icon-button" onClick={() => setCreating(false)}><IconX /></button></div><div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px"}}><label>Origen<select value={source} onChange={(event) => setSource(event.target.value)}><option value="">Selecciona</option>{locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Destino<select value={destination} onChange={(event) => setDestination(event.target.value)}><option value="">Selecciona</option>{locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>{products.map((product) => <div className="request-line" key={product.id}><span><strong>{product.name}</strong><small>{product.unit.symbol}</small></span><Stepper label={`Cantidad de ${product.name}`} value={amounts[product.id] ?? ""} allowDecimals={product.unit.allowDecimals} onChange={(next) => setAmounts({ ...amounts, [product.id]: next })} /></div>)}<div className="sticky-submit"><button className="button primary" disabled={!source || !destination || !Object.values(amounts).some((value) => Number(value) > 0) || create.isPending} onClick={() => create.mutate()}>{create.isPending ? "Preparando..." : "Preparar surtido"}</button></div>{create.error && <div className="form-error">{typeof create.error.message === 'string' ? create.error.message : JSON.stringify(create.error.message)}</div>}</section>}
       <section className="delivery-grid">{transfers.length ? transfers.map((transfer) => <article className="delivery-card" key={transfer.id}><div className="delivery-heading"><div><span className="eyebrow">{transfer.destination.name}</span><h2><span className="folio">{transfer.folio}</span></h2></div><Status value={transfer.status} /></div><TransferTimeline status={transfer.status} /><ul>{transfer.lines.map((line) => <li key={line.id}><span>{line.product.name}</span><strong>{quantity(line.sentQuantity)} {line.product.unit.symbol}</strong></li>)}</ul>{transfer.driver && <p className="muted">🚗 {transfer.driver.name}</p>}{["SYSTEM_OWNER", "ADMIN"].includes(user.role) && transfer.status === "PREPARING" && <label className="driver-select">Asignar repartidor<select defaultValue="" onChange={(event) => event.target.value && assign.mutate({ id: transfer.id, driverUserId: event.target.value })}><option value="">Selecciona</option>{users.filter((item) => item.role === "DRIVER" && item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}{user.role === "DRIVER" && transfer.status === "ASSIGNED" && <button className="button primary wide" onClick={() => transition.mutate({ id: transfer.id, action: "start" })}>Iniciar reparto</button>}{user.role === "DRIVER" && transfer.status === "IN_ROUTE" && <button className="button primary wide" onClick={() => transition.mutate({ id: transfer.id, action: "deliver" })}>Marcar entrega</button>}</article>) : <Empty>No hay entregas en esta vista.</Empty>}</section>
     </Page>
   );
@@ -936,23 +1031,22 @@ export function ReceivingPage() {
             const diff = received - sent;
             const diffClass = getDifferenceClass(line.sentQuantity, amounts[line.id] ?? line.sentQuantity);
             return (
-              <label className="reception-line" key={line.id}>
+              <div className="reception-line" key={line.id}>
                 <span>
                   <strong>{line.product.name}</strong>
                   <small>Enviado: {quantity(line.sentQuantity)} {line.product.unit.symbol}</small>
                 </span>
                 <span style={{ display: "grid", gap: "6px" }}>
                   Recibido
-                  <input
-                    type="number"
-                    min="0"
-                    inputMode="decimal"
+                  <Stepper
+                    label={`Recibido de ${line.product.name}`}
                     value={amounts[line.id] ?? ""}
-                    onChange={(event) => setAmounts({ ...amounts, [line.id]: event.target.value })}
+                    allowDecimals={line.product.unit.allowDecimals}
+                    onChange={(next) => setAmounts({ ...amounts, [line.id]: next })}
                   />
                   {diff !== 0 && <span className={`delta ${diffClass}`}>{diff > 0 ? "+" : ""}{quantity(diff)}</span>}
                 </span>
-              </label>
+              </div>
             );
           })}
           {differences.length > 0 && (
