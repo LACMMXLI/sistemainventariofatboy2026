@@ -18,6 +18,12 @@ import { AuthGuard, type AuthRequest, Roles, RolesGuard } from "../auth/auth.gua
 import { PrismaService } from "../prisma.service";
 import { nextFolio } from "../folio";
 
+/// Roles atados a una sucursal base: el encargado solo opera la suya, el
+/// supervisor la usa como sucursal de referencia aunque vea todas.
+function needsLocation(role?: string) {
+  return role === "MANAGER" || role === "SUPERVISOR";
+}
+
 @Controller()
 @UseGuards(AuthGuard, RolesGuard)
 export class CatalogController {
@@ -329,6 +335,18 @@ export class CatalogController {
     });
   }
 
+  /// Quién puede llevar un reparto. Va aparte de `users` para que el supervisor
+  /// pueda asignar entregas sin ver la administración de usuarios.
+  @Get("drivers")
+  @Roles("SYSTEM_OWNER", "ADMIN", "SUPERVISOR")
+  drivers() {
+    return this.prisma.user.findMany({
+      where: { active: true, hiddenFromAdmin: false, role: { in: ["DRIVER", "SUPERVISOR"] } },
+      select: { id: true, name: true, role: true },
+      orderBy: { name: "asc" }
+    });
+  }
+
   @Post("users")
   @Roles("SYSTEM_OWNER", "ADMIN")
   async createUser(
@@ -337,12 +355,14 @@ export class CatalogController {
       name: string;
       email: string;
       password: string;
-      role: "ADMIN" | "MANAGER" | "DRIVER";
+      role: "ADMIN" | "SUPERVISOR" | "MANAGER" | "DRIVER";
       locationId?: string | null;
     }
   ) {
     if (body.password.length < 12) throw new ConflictException("La contraseña debe tener al menos 12 caracteres");
-    if (body.role === "MANAGER" && !body.locationId) throw new ConflictException("El encargado requiere sucursal");
+    if (needsLocation(body.role) && !body.locationId) {
+      throw new ConflictException("El encargado requiere sucursal");
+    }
     const passwordHash = await hash(body.password, 12);
     const user = await this.prisma.$transaction(async (tx) =>
       tx.user.create({
@@ -352,7 +372,7 @@ export class CatalogController {
           email: body.email.trim().toLowerCase(),
           passwordHash,
           role: body.role,
-          locationId: body.role === "MANAGER" ? body.locationId : null
+          locationId: needsLocation(body.role) ? body.locationId : null
         }
       })
     );
@@ -368,7 +388,7 @@ export class CatalogController {
     @Body() body: {
       name?: string;
       email?: string;
-      role?: "ADMIN" | "MANAGER" | "DRIVER";
+      role?: "ADMIN" | "SUPERVISOR" | "MANAGER" | "DRIVER";
       locationId?: string | null;
       active?: boolean;
     }
@@ -400,7 +420,7 @@ export class CatalogController {
         role: before.role === "SYSTEM_OWNER" ? undefined : body.role,
         locationId: before.role === "SYSTEM_OWNER"
           ? undefined
-          : body.role === "MANAGER"
+          : needsLocation(body.role)
             ? body.locationId
             : body.role
               ? null

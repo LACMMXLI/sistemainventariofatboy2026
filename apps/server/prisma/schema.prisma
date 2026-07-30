@@ -10,6 +10,8 @@ datasource db {
 enum Role {
   SYSTEM_OWNER
   ADMIN
+  /// Encargado supervisor: opera todas las sucursales y además reparte.
+  SUPERVISOR
   MANAGER
   DRIVER
 }

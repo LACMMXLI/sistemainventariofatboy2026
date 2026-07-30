@@ -383,9 +383,13 @@ export class OperationsService {
     });
   }
 
-  listTransfers(user: AuthUser, requestedLocationId?: string) {
+  /**
+   * `onlyMine` es la vista de repartidor: el supervisor la usa para ver lo que
+   * él tiene que llevar, aparte del movimiento general de las sucursales.
+   */
+  listTransfers(user: AuthUser, requestedLocationId?: string, onlyMine = false) {
     const where =
-      user.role === "DRIVER"
+      user.role === "DRIVER" || onlyMine
         ? { driverUserId: user.id }
         : { destinationLocationId: this.scopedLocation(user, requestedLocationId) };
     return this.prisma.transfer.findMany({
@@ -434,7 +438,7 @@ export class OperationsService {
     lines: TransferLineInput[],
     notes?: string
   ) {
-    if (!["SYSTEM_OWNER", "ADMIN"].includes(user.role)) throw new ForbiddenException();
+    if (!["SYSTEM_OWNER", "ADMIN", "SUPERVISOR"].includes(user.role)) throw new ForbiddenException();
 
     // Validar disponibilidad
     if (sourceLocationId) {
@@ -476,9 +480,9 @@ export class OperationsService {
   }
 
   async assignDriver(user: AuthUser, id: string, driverUserId: string) {
-    if (!["SYSTEM_OWNER", "ADMIN"].includes(user.role)) throw new ForbiddenException();
+    if (!["SYSTEM_OWNER", "ADMIN", "SUPERVISOR"].includes(user.role)) throw new ForbiddenException();
     const driver = await this.prisma.user.findFirst({
-      where: { id: driverUserId, role: "DRIVER", active: true }
+      where: { id: driverUserId, role: { in: ["DRIVER", "SUPERVISOR"] }, active: true }
     });
     if (!driver) throw new BadRequestException("Repartidor no disponible");
     return this.prisma.transfer.update({
@@ -488,7 +492,7 @@ export class OperationsService {
   }
 
   async cancelTransfer(user: AuthUser, id: string) {
-    if (!["SYSTEM_OWNER", "ADMIN"].includes(user.role)) throw new ForbiddenException();
+    if (!["SYSTEM_OWNER", "ADMIN", "SUPERVISOR"].includes(user.role)) throw new ForbiddenException();
     const transfer = await this.prisma.transfer.findUnique({ where: { id } });
     if (!transfer) throw new NotFoundException("Surtido no encontrado");
     if (!["DRAFT", "PREPARING", "ASSIGNED"].includes(transfer.status)) {
@@ -585,6 +589,10 @@ export class OperationsService {
       const transfer = await tx.transfer.findUnique({ where: { id }, include: { lines: true } });
       if (!transfer) throw new NotFoundException("Surtido no encontrado");
       this.assertLocation(user, transfer.destinationLocationId);
+      // Control cruzado: quien llevó la mercancía no puede firmar su recepción.
+      if (transfer.driverUserId === user.id) {
+        throw new ForbiddenException("La recepción la confirma la sucursal que recibe, no quien entrega");
+      }
       if (transfer.status !== "DELIVERED") {
         throw new ConflictException("El surtido no está listo para recepción");
       }
@@ -687,7 +695,7 @@ export class OperationsService {
   }
 
   async resolveIncident(user: AuthUser, id: string) {
-    if (!["SYSTEM_OWNER", "ADMIN"].includes(user.role)) throw new ForbiddenException();
+    if (!["SYSTEM_OWNER", "ADMIN", "SUPERVISOR"].includes(user.role)) throw new ForbiddenException();
     return this.prisma.incident.update({
       where: { id },
       data: { status: "RESOLVED", resolvedAt: new Date(), resolvedByUserId: user.id }

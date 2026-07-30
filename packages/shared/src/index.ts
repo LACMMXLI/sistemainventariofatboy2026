@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const roles = ["SYSTEM_OWNER", "ADMIN", "MANAGER", "DRIVER"] as const;
+export const roles = ["SYSTEM_OWNER", "ADMIN", "SUPERVISOR", "MANAGER", "DRIVER"] as const;
 export type Role = (typeof roles)[number];
 
 export const quantitySchema = z

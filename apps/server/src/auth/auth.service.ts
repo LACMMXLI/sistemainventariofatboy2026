@@ -61,7 +61,7 @@ export class AuthService {
     id: string;
     name: string;
     email: string;
-    role: "SYSTEM_OWNER" | "ADMIN" | "MANAGER" | "DRIVER";
+    role: "SYSTEM_OWNER" | "ADMIN" | "SUPERVISOR" | "MANAGER" | "DRIVER";
     locationId: string | null;
     authVersion: number;
   }) {

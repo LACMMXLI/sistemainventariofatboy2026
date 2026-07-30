@@ -166,6 +166,20 @@ const adminNavigation = [
   ["/configuracion", "Configuración", IconSettings]
 ] as const;
 
+// El supervisor opera todas las sucursales y además lleva sus propios repartos.
+const supervisorNavigation = [
+  ["/", "Inicio", IconHome],
+  ["/stock", "Stock", IconStack2],
+  ["/entradas", "Entradas", IconPackageImport],
+  ["/conteos", "Conteos", IconClipboardCheck],
+  ["/solicitudes", "Solicitudes", IconReceipt],
+  ["/surtidos", "Surtidos", IconPackageExport],
+  ["/repartos", "Mis entregas", IconTruck],
+  ["/recepciones", "Recepciones", IconChecklist],
+  ["/incidencias", "Incidencias", IconAlertTriangle],
+  ["/reportes", "Reportes", IconFileAnalytics]
+] as const;
+
 const managerNavigation = [
   ["/", "Inicio", IconHome],
   ["/stock", "Stock", IconStack2],
@@ -191,7 +205,9 @@ function Shell() {
       ? driverNavigation
       : app.user.role === "MANAGER"
         ? managerNavigation
-        : adminNavigation;
+        : app.user.role === "SUPERVISOR"
+          ? supervisorNavigation
+          : adminNavigation;
   const active = nav.find(([path]) => path === route.path)?.[1] || "FATBOY";
 
   function toggleCollapsed() {
@@ -389,6 +405,7 @@ function roleLabel(role: SessionUser["role"]) {
   return {
     SYSTEM_OWNER: "Propietario del sistema",
     ADMIN: "Administrador",
+    SUPERVISOR: "Encargado supervisor",
     MANAGER: "Encargado",
     DRIVER: "Repartidor"
   }[role];

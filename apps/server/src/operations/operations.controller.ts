@@ -110,8 +110,12 @@ export class OperationsController {
   }
 
   @Get("transfers")
-  transfers(@Req() request: AuthRequest, @Query("locationId") locationId?: string) {
-    return this.operations.listTransfers(request.user, locationId);
+  transfers(
+    @Req() request: AuthRequest,
+    @Query("locationId") locationId?: string,
+    @Query("mine") mine?: string
+  ) {
+    return this.operations.listTransfers(request.user, locationId, mine === "true");
   }
 
   @Get("inventory/check-availability")
@@ -125,7 +129,7 @@ export class OperationsController {
   }
 
   @Post("transfers")
-  @Roles("SYSTEM_OWNER", "ADMIN")
+  @Roles("SYSTEM_OWNER", "ADMIN", "SUPERVISOR")
   createTransfer(
     @Req() request: AuthRequest,
     @Body() body: {
@@ -149,7 +153,7 @@ export class OperationsController {
   }
 
   @Post("transfers/:id/assign-driver")
-  @Roles("SYSTEM_OWNER", "ADMIN")
+  @Roles("SYSTEM_OWNER", "ADMIN", "SUPERVISOR")
   assignDriver(
     @Req() request: AuthRequest,
     @Param("id") id: string,
@@ -159,19 +163,19 @@ export class OperationsController {
   }
 
   @Post("transfers/:id/cancel")
-  @Roles("SYSTEM_OWNER", "ADMIN")
+  @Roles("SYSTEM_OWNER", "ADMIN", "SUPERVISOR")
   cancelTransfer(@Req() request: AuthRequest, @Param("id") id: string) {
     return this.operations.cancelTransfer(request.user, id);
   }
 
   @Post("transfers/:id/start")
-  @Roles("SYSTEM_OWNER", "DRIVER")
+  @Roles("SYSTEM_OWNER", "DRIVER", "SUPERVISOR")
   startDelivery(@Req() request: AuthRequest, @Param("id") id: string) {
     return this.operations.driverTransition(request.user, id, "start");
   }
 
   @Post("transfers/:id/deliver")
-  @Roles("SYSTEM_OWNER", "DRIVER")
+  @Roles("SYSTEM_OWNER", "DRIVER", "SUPERVISOR")
   deliver(@Req() request: AuthRequest, @Param("id") id: string) {
     return this.operations.driverTransition(request.user, id, "deliver");
   }
@@ -185,7 +189,7 @@ export class OperationsController {
   }
 
   @Post("transfers/:id/receive")
-  @Roles("SYSTEM_OWNER", "ADMIN", "MANAGER")
+  @Roles("SYSTEM_OWNER", "ADMIN", "SUPERVISOR", "MANAGER")
   receive(
     @Req() request: AuthRequest,
     @Param("id") id: string,
@@ -209,7 +213,7 @@ export class OperationsController {
   }
 
   @Post("incidents/:id/resolve")
-  @Roles("SYSTEM_OWNER", "ADMIN")
+  @Roles("SYSTEM_OWNER", "ADMIN", "SUPERVISOR")
   resolveIncident(@Req() request: AuthRequest, @Param("id") id: string) {
     return this.operations.resolveIncident(request.user, id);
   }

@@ -847,9 +847,14 @@ export function RequestsPage() {
   return (
     <Page icon={<IconReceipt />} title="Solicitudes" subtitle="Productos requeridos por la sucursal" action={<button className="button primary" onClick={() => setCreating(true)}><IconPlus size={19} />Nueva solicitud</button>}>
       {creating && <section className="panel request-builder"><div className="section-heading"><div><h2>Nueva solicitud</h2><p>Captura únicamente lo que necesita la sucursal.</p></div><button className="icon-button" onClick={() => setCreating(false)}><IconX /></button></div>{products.map((product) => <div className="request-line" key={product.id}><span><strong>{product.name}</strong><small>{product.unit.symbol}</small></span><Stepper label={`Cantidad de ${product.name}`} value={amounts[product.id] ?? ""} allowDecimals={product.unit.allowDecimals} onChange={(next) => setAmounts({ ...amounts, [product.id]: next })} /></div>)}<div className="sticky-submit"><button className="button primary" disabled={!Object.values(amounts).some((value) => Number(value) > 0) || create.isPending} onClick={() => create.mutate()}>Enviar solicitud</button></div>{create.error && <div className="form-error">{create.error.message}</div>}</section>}
-      <section className="panel data-panel">{requests.length ? requests.map((request) => <article className="list-row" key={request.id}><div><strong><span className="folio">{request.folio}</span></strong><small>{request.location.name} · {request.lines.length} productos · {date(request.createdAt)}</small></div><Status value={request.status} />{["SYSTEM_OWNER", "ADMIN"].includes(user.role) && ["PENDING", "PARTIAL"].includes(request.status) && <button className="button ghost" disabled={createTransfer.isPending} onClick={() => createTransfer.mutate(request)}>Crear surtido</button>}</article>) : <Empty>No hay solicitudes registradas.</Empty>}</section>
+      <section className="panel data-panel">{requests.length ? requests.map((request) => <article className="list-row" key={request.id}><div><strong><span className="folio">{request.folio}</span></strong><small>{request.location.name} · {request.lines.length} productos · {date(request.createdAt)}</small></div><Status value={request.status} />{["SYSTEM_OWNER", "ADMIN", "SUPERVISOR"].includes(user.role) && ["PENDING", "PARTIAL"].includes(request.status) && <button className="button ghost" disabled={createTransfer.isPending} onClick={() => createTransfer.mutate(request)}>Crear surtido</button>}</article>) : <Empty>No hay solicitudes registradas.</Empty>}</section>
     </Page>
   );
+}
+
+/** El botón de reparto es para quien lleva la entrega, sea repartidor o supervisor. */
+function isAssignedDriver(user: { id: string }, transfer: Transfer) {
+  return transfer.driver?.id === user.id;
 }
 
 function TransferTimeline({ status }: { status: string }) {
@@ -876,12 +881,15 @@ export function TransfersPage({ driverMode = false }: { driverMode?: boolean }) 
   const [destination, setDestination] = useState(locationId);
   const [source, setSource] = useState(locationId);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
-  const { data: transfers = [] } = useQuery({ queryKey: ["transfers", driverMode, locationId], queryFn: () => api.get<Transfer[]>(withLocation("/transfers", locationId)) });
+  // En "Mis entregas" pedimos solo lo asignado a este usuario; el supervisor ve
+  // el movimiento de las sucursales en la vista normal de Surtidos.
+  const transfersPath = driverMode ? "/transfers?mine=true" : withLocation("/transfers", locationId);
+  const { data: transfers = [] } = useQuery({ queryKey: ["transfers", driverMode, locationId], queryFn: () => api.get<Transfer[]>(transfersPath) });
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: () => api.get<Product[]>("/products") });
-  const { data: users = [] } = useQuery({
-    queryKey: ["users"],
-    queryFn: () => api.get<UserRow[]>("/users"),
-    enabled: ["SYSTEM_OWNER", "ADMIN"].includes(user.role)
+  const { data: drivers = [] } = useQuery({
+    queryKey: ["drivers"],
+    queryFn: () => api.get<Array<{ id: string; name: string }>>("/drivers"),
+    enabled: !driverMode && ["SYSTEM_OWNER", "ADMIN", "SUPERVISOR"].includes(user.role)
   });
   const create = useMutation({
     mutationFn: () => api.post("/transfers", { sourceLocationId: source, destinationLocationId: destination, lines: Object.entries(amounts).filter(([, value]) => Number(value) > 0).map(([productId, sentQuantity]) => ({ productId, sentQuantity })) }),
@@ -918,13 +926,13 @@ export function TransfersPage({ driverMode = false }: { driverMode?: boolean }) 
   return (
     <Page icon={isDriverView ? <IconTruck /> : <IconPackageExport />} title={isDriverView ? "Mis entregas" : "Surtidos"} subtitle={isDriverView ? "Entregas asignadas a tu usuario" : "Preparación y seguimiento de producto"} action={!driverMode && !["DRIVER", "MANAGER"].includes(user.role) && <button className="button primary" onClick={() => setCreating(true)}><IconPlus size={19} />Crear surtido</button>}>
       {creating && <section className="panel request-builder"><div className="section-heading"><div><h2>Nuevo surtido</h2><p>Selecciona origen y destino, luego agrega productos.</p></div><button className="icon-button" onClick={() => setCreating(false)}><IconX /></button></div><div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px"}}><label>Origen<select value={source} onChange={(event) => setSource(event.target.value)}><option value="">Selecciona</option>{locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Destino<select value={destination} onChange={(event) => setDestination(event.target.value)}><option value="">Selecciona</option>{locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>{products.map((product) => <div className="request-line" key={product.id}><span><strong>{product.name}</strong><small>{product.unit.symbol}</small></span><Stepper label={`Cantidad de ${product.name}`} value={amounts[product.id] ?? ""} allowDecimals={product.unit.allowDecimals} onChange={(next) => setAmounts({ ...amounts, [product.id]: next })} /></div>)}<div className="sticky-submit"><button className="button primary" disabled={!source || !destination || !Object.values(amounts).some((value) => Number(value) > 0) || create.isPending} onClick={() => create.mutate()}>{create.isPending ? "Preparando..." : "Preparar surtido"}</button></div>{create.error && <div className="form-error">{typeof create.error.message === 'string' ? create.error.message : JSON.stringify(create.error.message)}</div>}</section>}
-      <section className="delivery-grid">{transfers.length ? transfers.map((transfer) => <article className="delivery-card" key={transfer.id}><div className="delivery-heading"><div><span className="eyebrow">{transfer.destination.name}</span><h2><span className="folio">{transfer.folio}</span></h2></div><Status value={transfer.status} /></div><TransferTimeline status={transfer.status} /><ul>{transfer.lines.map((line) => <li key={line.id}><span>{line.product.name}</span><strong>{quantity(line.sentQuantity)} {line.product.unit.symbol}</strong></li>)}</ul>{transfer.driver && <p className="muted">🚗 {transfer.driver.name}</p>}{["SYSTEM_OWNER", "ADMIN"].includes(user.role) && transfer.status === "PREPARING" && <label className="driver-select">Asignar repartidor<select defaultValue="" onChange={(event) => event.target.value && assign.mutate({ id: transfer.id, driverUserId: event.target.value })}><option value="">Selecciona</option>{users.filter((item) => item.role === "DRIVER" && item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}{user.role === "DRIVER" && transfer.status === "ASSIGNED" && <button className="button primary wide" onClick={() => transition.mutate({ id: transfer.id, action: "start" })}>Iniciar reparto</button>}{user.role === "DRIVER" && transfer.status === "IN_ROUTE" && <button className="button primary wide" onClick={() => transition.mutate({ id: transfer.id, action: "deliver" })}>Marcar entrega</button>}</article>) : <Empty>No hay entregas en esta vista.</Empty>}</section>
+      <section className="delivery-grid">{transfers.length ? transfers.map((transfer) => <article className="delivery-card" key={transfer.id}><div className="delivery-heading"><div><span className="eyebrow">{transfer.destination.name}</span><h2><span className="folio">{transfer.folio}</span></h2></div><Status value={transfer.status} /></div><TransferTimeline status={transfer.status} /><ul>{transfer.lines.map((line) => <li key={line.id}><span>{line.product.name}</span><strong>{quantity(line.sentQuantity)} {line.product.unit.symbol}</strong></li>)}</ul>{transfer.driver && <p className="muted">🚗 {transfer.driver.name}</p>}{["SYSTEM_OWNER", "ADMIN", "SUPERVISOR"].includes(user.role) && transfer.status === "PREPARING" && <label className="driver-select">Asignar repartidor<select defaultValue="" onChange={(event) => event.target.value && assign.mutate({ id: transfer.id, driverUserId: event.target.value })}><option value="">Selecciona</option>{drivers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}{isAssignedDriver(user, transfer) && transfer.status === "ASSIGNED" && <button className="button primary wide" onClick={() => transition.mutate({ id: transfer.id, action: "start" })}>Iniciar reparto</button>}{isAssignedDriver(user, transfer) && transfer.status === "IN_ROUTE" && <button className="button primary wide" onClick={() => transition.mutate({ id: transfer.id, action: "deliver" })}>Marcar entrega</button>}</article>) : <Empty>No hay entregas en esta vista.</Empty>}</section>
     </Page>
   );
 }
 
 export function ReceivingPage() {
-  const { locationId } = useApp();
+  const { user, locationId } = useApp();
   const client = useQueryClient();
   const toast = useToast();
   const [selected, setSelected] = useState<Transfer | null>(null);
@@ -998,16 +1006,20 @@ export function ReceivingPage() {
                   <Status value={transfer.status} />
                 </div>
                 <p>{transfer.lines.length} productos por recibir</p>
-                <button
-                  className="button primary wide"
-                  onClick={() => {
-                    setSelected(transfer);
-                    setAmounts(Object.fromEntries(transfer.lines.map((line) => [line.id, line.sentQuantity])));
-                    setShowSummary(false);
-                  }}
-                >
-                  Recibir surtido
-                </button>
+                {isAssignedDriver(user, transfer) ? (
+                  <p className="muted">Tú entregaste este surtido: la recepción la confirma la sucursal que recibe.</p>
+                ) : (
+                  <button
+                    className="button primary wide"
+                    onClick={() => {
+                      setSelected(transfer);
+                      setAmounts(Object.fromEntries(transfer.lines.map((line) => [line.id, line.sentQuantity])));
+                      setShowSummary(false);
+                    }}
+                  >
+                    Recibir surtido
+                  </button>
+                )}
               </article>
             ))
           ) : (
@@ -1153,13 +1165,17 @@ export function ReportsPage() {
 
 type UserRow = { id: string; folio: string; name: string; email: string; role: string; locationId?: string | null; active: boolean; lastLoginAt?: string | null };
 
-const creatableRoles = ["ADMIN", "MANAGER", "DRIVER"] as const;
+const creatableRoles = ["ADMIN", "SUPERVISOR", "MANAGER", "DRIVER"] as const;
+
+/// Roles con sucursal base obligatoria.
+const rolesWithLocation = ["MANAGER", "SUPERVISOR"];
 
 function roleLabelEs(role: string) {
   return (
     {
       SYSTEM_OWNER: "Propietario del sistema",
       ADMIN: "Administrador",
+      SUPERVISOR: "Encargado supervisor",
       MANAGER: "Encargado",
       DRIVER: "Repartidor"
     }[role] ?? role.replace("_", " ")
@@ -1223,7 +1239,7 @@ export function UsersPage() {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const locationId = role === "MANAGER" ? String(form.get("locationId") || "") || null : null;
+    const locationId = rolesWithLocation.includes(role) ? String(form.get("locationId") || "") || null : null;
     if (editing) {
       save.mutate(editing.role === "SYSTEM_OWNER"
         ? { name: String(form.get("name")), email: String(form.get("email")) }
@@ -1306,7 +1322,7 @@ export function UsersPage() {
                 </select>
               </label>
             )}
-            {editing?.role !== "SYSTEM_OWNER" && role === "MANAGER" && (
+            {editing?.role !== "SYSTEM_OWNER" && rolesWithLocation.includes(role) && (
               <label>
                 Sucursal
                 <select name="locationId" required defaultValue={editing?.locationId ?? ""}>

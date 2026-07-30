@@ -54,7 +54,7 @@ export class InventoryController {
   /// Entrada de mercancía comprada a una sucursal: suma stock ahí y desde esa
   /// sucursal ya puede surtirse a las demás.
   @Post("purchases")
-  @Roles("SYSTEM_OWNER", "ADMIN")
+  @Roles("SYSTEM_OWNER", "ADMIN", "SUPERVISOR")
   async purchase(
     @Req() request: AuthRequest,
     @Headers("idempotency-key") key: string,
@@ -102,7 +102,7 @@ export class InventoryController {
   }
 
   @Post("adjustments")
-  @Roles("SYSTEM_OWNER", "ADMIN")
+  @Roles("SYSTEM_OWNER", "ADMIN", "SUPERVISOR")
   async adjust(
     @Req() request: AuthRequest,
     @Headers("idempotency-key") key: string,
