@@ -21,6 +21,7 @@ enum LocationType {
 
 enum MovementType {
   INITIAL_STOCK
+  PURCHASE_ENTRY
   COUNT_ADJUSTMENT
   TRANSFER_IN
   TRANSFER_OUT

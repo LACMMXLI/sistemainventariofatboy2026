@@ -13,7 +13,6 @@ export type Product = {
   updatedAt: string;
   category: Category;
   unit: Unit;
-  locations: Array<{ location: Location }>;
 };
 export type Dashboard = {
   pendingRequests: number;

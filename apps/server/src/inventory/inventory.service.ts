@@ -60,12 +60,39 @@ export class InventoryService {
     });
   }
 
-  list(locationId?: string, productId?: string) {
-    return this.prisma.inventoryBalance.findMany({
+  async list(locationId?: string, productId?: string) {
+    const balances = await this.prisma.inventoryBalance.findMany({
       where: { locationId, productId },
       include: { product: { include: { unit: true, category: true } }, location: true },
       orderBy: { product: { name: "asc" } }
     });
+    if (!locationId) return balances;
+
+    // Catálogo único: la sucursal muestra todos los productos activos, en cero
+    // mientras no tenga movimientos.
+    const location = await this.prisma.location.findUnique({ where: { id: locationId } });
+    if (!location) return balances;
+    const withBalance = new Set(balances.map((balance) => balance.productId));
+    const missing = await this.prisma.product.findMany({
+      where: { active: true, id: productId ?? { notIn: [...withBalance] } },
+      include: { unit: true, category: true },
+      orderBy: { name: "asc" }
+    });
+    const placeholders = missing
+      .filter((product) => !withBalance.has(product.id))
+      .map((product) => ({
+        id: `${locationId}:${product.id}`,
+        locationId,
+        productId: product.id,
+        quantity: new Prisma.Decimal(0),
+        version: 0,
+        updatedAt: product.updatedAt,
+        location,
+        product
+      }));
+    return [...balances, ...placeholders].sort((a, b) =>
+      a.product.name.localeCompare(b.product.name, "es-MX")
+    );
   }
 
   movements(locationId: string, productId: string) {

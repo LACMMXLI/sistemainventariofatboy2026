@@ -138,12 +138,14 @@ export class OperationsService {
         where: { locationId, status: "IN_PROGRESS" }
       });
       if (active) throw new ConflictException("Ya existe un conteo en progreso");
-      const assigned = await tx.locationProduct.findMany({
-        where: { locationId, active: true, product: { active: true } },
-        include: { product: true },
-        orderBy: [{ sortOrder: "asc" }, { product: { name: "asc" } }]
+      // El catálogo es único para toda la empresa: cada sucursal cuenta todos
+      // los productos activos y guarda su propio stock.
+      const catalog = await tx.product.findMany({
+        where: { active: true },
+        select: { id: true },
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
       });
-      if (!assigned.length) throw new BadRequestException("La sucursal no tiene productos asignados");
+      if (!catalog.length) throw new BadRequestException("El catálogo no tiene productos activos");
       const balances = await tx.inventoryBalance.findMany({ where: { locationId } });
       const byProduct = new Map(balances.map((balance) => [balance.productId, balance]));
       return tx.stockCount.create({
@@ -153,7 +155,7 @@ export class OperationsService {
           startedByUserId: user.id,
           notes,
           lines: {
-            create: assigned.map(({ productId }) => ({
+            create: catalog.map(({ id: productId }) => ({
               productId,
               snapshotQuantity: byProduct.get(productId)?.quantity ?? 0,
               movementVersionAtCount: byProduct.get(productId)?.version ?? 0
@@ -496,19 +498,39 @@ export class OperationsService {
   }
 
   async driverTransition(user: AuthUser, id: string, action: "start" | "deliver") {
-    const transfer = await this.prisma.transfer.findUnique({ where: { id } });
-    if (!transfer) throw new NotFoundException("Surtido no encontrado");
-    if (user.role !== "SYSTEM_OWNER" && transfer.driverUserId !== user.id) {
-      throw new ForbiddenException("Esta entrega no está asignada a tu usuario");
-    }
-    const expected = action === "start" ? "ASSIGNED" : "IN_ROUTE";
-    if (transfer.status !== expected) throw new ConflictException("La entrega cambió de estado");
-    return this.prisma.transfer.update({
-      where: { id },
-      data:
-        action === "start"
-          ? { status: "IN_ROUTE", departedAt: new Date() }
-          : { status: "DELIVERED", deliveredAt: new Date() }
+    return this.prisma.$transaction(async (tx) => {
+      const transfer = await tx.transfer.findUnique({ where: { id }, include: { lines: true } });
+      if (!transfer) throw new NotFoundException("Surtido no encontrado");
+      if (user.role !== "SYSTEM_OWNER" && transfer.driverUserId !== user.id) {
+        throw new ForbiddenException("Esta entrega no está asignada a tu usuario");
+      }
+      const expected = action === "start" ? "ASSIGNED" : "IN_ROUTE";
+      if (transfer.status !== expected) throw new ConflictException("La entrega cambió de estado");
+
+      // La mercancía sale físicamente de la sucursal origen al iniciar el
+      // reparto: ahí se descuenta su stock. El destino se suma al recibir.
+      if (action === "start" && transfer.sourceLocationId) {
+        for (const line of transfer.lines) {
+          await this.inventory.applyMovementTx(tx, {
+            locationId: transfer.sourceLocationId,
+            productId: line.productId,
+            type: "TRANSFER_OUT",
+            quantityDelta: line.sentQuantity.negated(),
+            referenceType: "Transfer",
+            referenceId: transfer.id,
+            referenceLineId: line.id,
+            performedByUserId: user.id
+          });
+        }
+      }
+
+      return tx.transfer.update({
+        where: { id },
+        data:
+          action === "start"
+            ? { status: "IN_ROUTE", departedAt: new Date() }
+            : { status: "DELIVERED", deliveredAt: new Date() }
+      });
     });
   }
 

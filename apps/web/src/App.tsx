@@ -21,6 +21,7 @@ import {
   IconLayoutSidebarLeftExpand,
   IconLogout,
   IconPackageExport,
+  IconPackageImport,
   IconReceipt,
   IconSettings,
   IconStack2,
@@ -46,6 +47,7 @@ import {
   IncidentsPage,
   InventoryPage,
   ProductsPage,
+  PurchasesPage,
   ReceivingPage,
   ReportsPage,
   RequestsPage,
@@ -152,6 +154,7 @@ const adminNavigation = [
   ["/productos", "Productos", IconBox],
   ["/catalogo", "Catálogo", IconCategory],
   ["/stock", "Stock", IconStack2],
+  ["/entradas", "Entradas", IconPackageImport],
   ["/conteos", "Conteos", IconClipboardCheck],
   ["/solicitudes", "Solicitudes", IconReceipt],
   ["/surtidos", "Surtidos", IconPackageExport],
@@ -307,6 +310,7 @@ function RouteContent({ path }: { path: string }) {
   if (path === "/productos") return <ProductsPage />;
   if (path === "/catalogo") return <CatalogPage />;
   if (path === "/stock") return <InventoryPage />;
+  if (path === "/entradas") return <PurchasesPage />;
   if (path === "/conteos") return <CountsPage />;
   if (/^\/conteos\/[^/]+$/.test(path)) return <CountCapturePage />;
   if (path === "/solicitudes") return <RequestsPage />;

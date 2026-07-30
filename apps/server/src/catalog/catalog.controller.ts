@@ -8,7 +8,6 @@ import {
   Param,
   Patch,
   Post,
-  Put,
   Query,
   Req,
   UseGuards
@@ -43,9 +42,24 @@ export class CatalogController {
     if (!name || name.length < 2 || !code || code.length > 12) {
       throw new BadRequestException("Nombre y código de sucursal son obligatorios");
     }
-    const location = await this.prisma.$transaction(async (tx) =>
-      tx.location.create({ data: { folio: await nextFolio(tx, "SUC"), name, code } })
-    );
+    const location = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.location.create({
+        data: { folio: await nextFolio(tx, "SUC"), name, code }
+      });
+      // Catálogo único: la sucursal nace con todo el catálogo en cero.
+      const products = await tx.product.findMany({ where: { active: true }, select: { id: true } });
+      if (products.length) {
+        await tx.inventoryBalance.createMany({
+          data: products.map((product) => ({
+            locationId: created.id,
+            productId: product.id,
+            quantity: 0
+          })),
+          skipDuplicates: true
+        });
+      }
+      return created;
+    });
     await this.audit(request, "CREATE", "Location", location.id, null, location);
     return location;
   }
@@ -195,47 +209,21 @@ export class CatalogController {
     return category;
   }
 
-  @Put("locations/:id/products")
-  @Roles("SYSTEM_OWNER", "ADMIN")
-  async assignLocationProducts(
-    @Param("id") locationId: string,
-    @Body() body: { productIds: string[] }
-  ) {
-    await this.prisma.$transaction(async (tx) => {
-      await tx.locationProduct.updateMany({ where: { locationId }, data: { active: false } });
-      for (const [sortOrder, productId] of body.productIds.entries()) {
-        await tx.locationProduct.upsert({
-          where: { locationId_productId: { locationId, productId } },
-          create: { locationId, productId, sortOrder },
-          update: { active: true, sortOrder }
-        });
-      }
-    });
-    return { locationId, assigned: body.productIds.length };
-  }
-
+  /// El catálogo es único para todas las sucursales, así que `locationId` ya no
+  /// filtra nada; se sigue aceptando para no romper clientes viejos.
   @Get("products")
   async products(
-    @Req() request: AuthRequest,
     @Query("search") search?: string,
     @Query("categoryId") categoryId?: string,
-    @Query("active") active?: string,
-    @Query("locationId") requestedLocationId?: string
+    @Query("active") active?: string
   ) {
-    const locationId =
-      request.user.role === "MANAGER" ? request.user.locationId : requestedLocationId;
     return this.prisma.product.findMany({
       where: {
         name: search ? { contains: search, mode: "insensitive" } : undefined,
         categoryId: categoryId || undefined,
-        active: active === undefined ? undefined : active === "true",
-        locations: locationId ? { some: { locationId, active: true } } : undefined
+        active: active === undefined ? undefined : active === "true"
       },
-      include: {
-        category: true,
-        unit: true,
-        locations: { where: { active: true }, include: { location: true } }
-      },
+      include: { category: true, unit: true },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
     });
   }
@@ -244,7 +232,7 @@ export class CatalogController {
   async product(@Param("id") id: string) {
     const product = await this.prisma.product.findUnique({
       where: { id },
-      include: { category: true, unit: true, locations: { include: { location: true } } }
+      include: { category: true, unit: true }
     });
     if (!product) throw new NotFoundException("Producto no encontrado");
     return product;
@@ -257,11 +245,28 @@ export class CatalogController {
     const normalizedName = input.name.trim().toLocaleLowerCase("es-MX");
     const exists = await this.prisma.product.findUnique({ where: { normalizedName } });
     if (exists) throw new ConflictException("Ya existe un producto con ese nombre");
-    const product = await this.prisma.$transaction(async (tx) =>
-      tx.product.create({
+    const product = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.product.create({
         data: { ...input, normalizedName, folio: await nextFolio(tx, "PRD") }
-      })
-    );
+      });
+      // El producto nace en cero en todas las sucursales activas, para que
+      // aparezca desde el primer conteo sin tener que asignarlo a mano.
+      const locations = await tx.location.findMany({
+        where: { active: true },
+        select: { id: true }
+      });
+      if (locations.length) {
+        await tx.inventoryBalance.createMany({
+          data: locations.map((location) => ({
+            locationId: location.id,
+            productId: created.id,
+            quantity: 0
+          })),
+          skipDuplicates: true
+        });
+      }
+      return created;
+    });
     await this.audit(request, "CREATE", "Product", product.id, null, product);
     return product;
   }

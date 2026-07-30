@@ -11,6 +11,7 @@ import {
   IconFileAnalytics,
   IconKey,
   IconPackageExport,
+  IconPackageImport,
   IconPencil,
   IconPower,
   IconPlus,
@@ -266,13 +267,12 @@ export function ProductsPage() {
         {isLoading ? <Skeleton rows={7} /> : visible.length ? (
           <>
             <div className="table products-table">
-              <div className="table-head"><span>Producto</span><span>Categoría</span><span>Unidad</span><span>Sucursales</span><span>Estatus</span><span>Actualización</span><span>Acciones</span></div>
+              <div className="table-head"><span>Producto</span><span>Categoría</span><span>Unidad</span><span>Estatus</span><span>Actualización</span><span>Acciones</span></div>
               {visible.map((product) => (
                 <div className="table-row" key={product.id}>
                   <span className="product-cell"><span className="product-thumb">{product.imageUrl ? <img src={product.imageUrl} alt="" /> : <IconBox size={22} />}</span><span><strong>{product.name}</strong><small><span className="folio">{product.folio}</span>{product.sku ? ` · ${product.sku}` : ""}</small></span></span>
                   <span><span className="category-pill">{product.category.name}</span></span>
                   <span>{product.unit.symbol}</span>
-                  <span className="location-dots">{product.locations.map(({ location }) => <i title={location.name} key={location.id}>{location.code.slice(0, 2)}</i>)}</span>
                   <span><Status value={product.active ? "Activo" : "Inactivo"} /></span>
                   <span className="updated-cell"><strong>{new Intl.DateTimeFormat("es-MX").format(new Date(product.updatedAt))}</strong><small>{new Intl.DateTimeFormat("es-MX", { timeStyle: "short" }).format(new Date(product.updatedAt))}</small></span>
                   <span className="row-actions">{canEdit && <><button aria-label={`Editar ${product.name}`} onClick={() => { setEditing(product); setShowForm(true); }}><IconPencil size={17} /></button><button aria-label={`${product.active ? "Desactivar" : "Activar"} ${product.name}`} onClick={() => changeActive.mutate(product)}><IconPower size={17} /></button></>}</span>
@@ -374,7 +374,105 @@ export function InventoryPage() {
           <div className="stock-grid">
             {visible.map((row) => <article className="stock-card" key={row.id}><div><strong>{row.product.name}</strong><small>{row.location.name} · {row.product.category.name}</small></div><span className="stock-quantity">{quantity(row.quantity)} <small>{row.product.unit.symbol}</small></span><small>Actualizado {date(row.updatedAt)}</small></article>)}
           </div>
-        ) : <Empty>Todavía no hay balances para esta sucursal.</Empty>}
+        ) : <Empty>No hay productos en el catálogo.</Empty>}
+      </section>
+    </Page>
+  );
+}
+
+/** Alta de mercancía comprada: entra al stock de una sucursal y desde ahí puede surtirse. */
+export function PurchasesPage() {
+  const { locationId, locations } = useApp();
+  const client = useQueryClient();
+  const toast = useToast();
+  const [destination, setDestination] = useState(locationId);
+  const [supplier, setSupplier] = useState("");
+  const [search, setSearch] = useState("");
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const { data: products = [], isLoading } = useQuery({
+    queryKey: ["products"],
+    queryFn: () => api.get<Product[]>("/products")
+  });
+  const lines = Object.entries(amounts).filter(([, value]) => Number(value) > 0);
+  const register = useMutation({
+    mutationFn: () =>
+      api.post(
+        "/inventory/purchases",
+        {
+          locationId: destination,
+          supplier: supplier.trim() || undefined,
+          lines: lines.map(([productId, quantity]) => ({ productId, quantity }))
+        },
+        crypto.randomUUID()
+      ),
+    onSuccess: () => {
+      const total = lines.length;
+      setAmounts({});
+      setSupplier("");
+      void client.invalidateQueries({ queryKey: ["inventory"] });
+      void client.invalidateQueries({ queryKey: ["dashboard"] });
+      toast.success({
+        title: "Entrada registrada",
+        detail: `${total} productos se sumaron al stock de la sucursal.`
+      });
+    },
+    onError: (cause) => toast.error({ title: "No se pudo registrar", detail: errorMessage(cause) })
+  });
+  const visible = products.filter(
+    (product) => product.active && product.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <Page
+      icon={<IconPackageImport />}
+      title="Entradas"
+      subtitle="Mercancía comprada que ingresa a una sucursal"
+    >
+      <section className="panel filters">
+        <label>
+          <span>Sucursal que recibe</span>
+          <select value={destination} onChange={(event) => setDestination(event.target.value)}>
+            <option value="">Selecciona</option>
+            {locations.map((item) => (
+              <option key={item.id} value={item.id}>{item.name}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Proveedor / factura</span>
+          <input value={supplier} onChange={(event) => setSupplier(event.target.value)} placeholder="Opcional" />
+        </label>
+        <label className="search">
+          <IconSearch size={19} />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto…" />
+        </label>
+      </section>
+      <section className="panel request-builder">
+        {isLoading ? <Skeleton rows={6} /> : visible.length ? (
+          visible.map((product) => (
+            <label className="request-line" key={product.id}>
+              <span><strong>{product.name}</strong><small>{product.unit.symbol}</small></span>
+              <input
+                type="number"
+                min="0"
+                step={product.unit.allowDecimals ? "0.01" : "1"}
+                inputMode="decimal"
+                placeholder="0"
+                value={amounts[product.id] ?? ""}
+                onChange={(event) => setAmounts({ ...amounts, [product.id]: event.target.value })}
+              />
+            </label>
+          ))
+        ) : <Empty>No hay productos que coincidan.</Empty>}
+        <div className="sticky-submit">
+          <button
+            className="button primary"
+            disabled={!destination || !lines.length || register.isPending}
+            onClick={() => register.mutate()}
+          >
+            {register.isPending ? "Registrando…" : `Registrar entrada (${lines.length})`}
+          </button>
+        </div>
       </section>
     </Page>
   );
@@ -609,7 +707,7 @@ export function RequestsPage() {
   const [creating, setCreating] = useState(false);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const { data: requests = [] } = useQuery({ queryKey: ["requests", locationId], queryFn: () => api.get<SupplyRequest[]>(withLocation("/requests", locationId)) });
-  const { data: products = [] } = useQuery({ queryKey: ["products", locationId], queryFn: () => api.get<Product[]>(withLocation("/products", locationId)) });
+  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: () => api.get<Product[]>("/products") });
   const create = useMutation({
     mutationFn: async () => {
       const request = await api.post<{ id: string }>("/requests", {
