@@ -121,12 +121,11 @@ function AuthenticatedApp({
     queryKey: ["locations"],
     queryFn: () => api.get<Location[]>("/locations")
   });
-  const defaultLocation = user.locationId || locations[0]?.id || "";
-  const [locationId, setLocationId] = useState(() => user.locationId || localStorage.getItem("fatboy-location") || "");
-
-  useEffect(() => {
-    if (!locationId && defaultLocation) setLocationId(defaultLocation);
-  }, [defaultLocation, locationId]);
+  // Cadena vacía = vista global (todas las sucursales). Es un valor válido y
+  // elegido a propósito: nunca se sustituye por "la primera sucursal".
+  const [locationId, setLocationId] = useState(
+    () => user.locationId || localStorage.getItem("fatboy-location") || ""
+  );
 
   const value = useMemo(
     () => ({

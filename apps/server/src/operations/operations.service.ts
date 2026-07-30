@@ -70,10 +70,14 @@ export class OperationsService {
       this.prisma.incident.count({
         where: { locationId, status: "RESOLVED", resolvedAt: { gte: startOfWeek } }
       }),
-      this.prisma.stockCount.findFirst({
-        where: { locationId, status: "IN_PROGRESS" },
-        include: { _count: { select: { lines: true } }, lines: { select: { status: true } } }
-      }),
+      // En vista global no hay "el conteo activo": son varias sucursales a la
+      // vez, así que la acción rápida solo aparece con una sucursal elegida.
+      locationId
+        ? this.prisma.stockCount.findFirst({
+            where: { locationId, status: "IN_PROGRESS" },
+            include: { _count: { select: { lines: true } }, lines: { select: { status: true } } }
+          })
+        : null,
       this.prisma.stockCount.count({
         where: { locationId, status: "COMPLETED", completedAt: { gte: startOfToday } }
       }),

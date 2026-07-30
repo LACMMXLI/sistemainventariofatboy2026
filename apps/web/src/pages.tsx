@@ -98,8 +98,14 @@ function AccuracyGauge({ rate }: { rate: number }) {
   );
 }
 
+/** Deja claro si lo que se ve es una sucursal o el consolidado de todas. */
+function scopeLabel(locationId: string, locations: Location[]) {
+  if (!locationId) return "Todas las sucursales";
+  return locations.find((item) => item.id === locationId)?.name ?? "Sucursal";
+}
+
 export function DashboardPage() {
-  const { user, locationId } = useApp();
+  const { user, locationId, locations } = useApp();
   const { data, isLoading } = useQuery({
     queryKey: ["dashboard", locationId],
     queryFn: () => api.get<Dashboard>(withLocation("/dashboard", locationId))
@@ -120,7 +126,11 @@ export function DashboardPage() {
   ] as const;
 
   return (
-    <Page icon={<IconBuildingStore />} title={`Hola, ${user.name.split(" ")[0]}`} subtitle="Esto requiere atención hoy.">
+    <Page
+      icon={<IconBuildingStore />}
+      title={`Hola, ${user.name.split(" ")[0]}`}
+      subtitle={`Esto requiere atención hoy · ${scopeLabel(locationId, locations)}`}
+    >
       <section className="kpi-grid stagger">
         {cards.map(([label, value, Icon, color]) => (
           <article className="kpi-card" key={label}>
@@ -563,7 +573,7 @@ export function CountsPage() {
   });
   const active = counts.find((count) => count.status === "IN_PROGRESS");
   return (
-    <Page icon={<IconClipboardCheck />} title="Conteos" subtitle="Captura física sin mostrar el stock registrado" action={!active && <button className="button primary" disabled={!locationId || start.isPending} onClick={() => start.mutate()}><IconPlus size={19} />Nuevo conteo</button>}>
+    <Page icon={<IconClipboardCheck />} title="Conteos" subtitle="Captura física sin mostrar el stock registrado" action={!active && <button className="button primary" disabled={!locationId || start.isPending} title={locationId ? undefined : "Elige una sucursal para iniciar un conteo"} onClick={() => start.mutate()}><IconPlus size={19} />Nuevo conteo</button>}>
       {start.error && <div className="form-error">{start.error.message}</div>}
       {active && <section className="panel active-count"><div><span className="eyebrow">CONTEO EN PROGRESO</span><h2>{active.location.name}</h2><p>Continúa donde te quedaste. Los cambios se guardan producto por producto.</p></div><button className="button primary" onClick={() => navigate(`/conteos/${active.id}`)}>Continuar</button></section>}
       <section className="panel data-panel">
@@ -845,7 +855,7 @@ export function RequestsPage() {
     onError: (cause) => toast.error({ title: "No se pudo crear el surtido", detail: errorMessage(cause) })
   });
   return (
-    <Page icon={<IconReceipt />} title="Solicitudes" subtitle="Productos requeridos por la sucursal" action={<button className="button primary" onClick={() => setCreating(true)}><IconPlus size={19} />Nueva solicitud</button>}>
+    <Page icon={<IconReceipt />} title="Solicitudes" subtitle={locationId ? "Productos requeridos por la sucursal" : "Solicitudes de todas las sucursales"} action={<button className="button primary" disabled={!locationId} title={locationId ? undefined : "Elige una sucursal para levantar una solicitud"} onClick={() => setCreating(true)}><IconPlus size={19} />Nueva solicitud</button>}>
       {creating && <section className="panel request-builder"><div className="section-heading"><div><h2>Nueva solicitud</h2><p>Captura únicamente lo que necesita la sucursal.</p></div><button className="icon-button" onClick={() => setCreating(false)}><IconX /></button></div>{products.map((product) => <div className="request-line" key={product.id}><span><strong>{product.name}</strong><small>{product.unit.symbol}</small></span><Stepper label={`Cantidad de ${product.name}`} value={amounts[product.id] ?? ""} allowDecimals={product.unit.allowDecimals} onChange={(next) => setAmounts({ ...amounts, [product.id]: next })} /></div>)}<div className="sticky-submit"><button className="button primary" disabled={!Object.values(amounts).some((value) => Number(value) > 0) || create.isPending} onClick={() => create.mutate()}>Enviar solicitud</button></div>{create.error && <div className="form-error">{create.error.message}</div>}</section>}
       <section className="panel data-panel">{requests.length ? requests.map((request) => <article className="list-row" key={request.id}><div><strong><span className="folio">{request.folio}</span></strong><small>{request.location.name} · {request.lines.length} productos · {date(request.createdAt)}</small></div><Status value={request.status} />{["SYSTEM_OWNER", "ADMIN", "SUPERVISOR"].includes(user.role) && ["PENDING", "PARTIAL"].includes(request.status) && <button className="button ghost" disabled={createTransfer.isPending} onClick={() => createTransfer.mutate(request)}>Crear surtido</button>}</article>) : <Empty>No hay solicitudes registradas.</Empty>}</section>
     </Page>
