@@ -269,7 +269,7 @@ export class OperationsService {
       const duplicate = await tx.countLineMutation.findUnique({
         where: { stockCountLineId_clientMutationId: { stockCountLineId: lineId, clientMutationId } }
       });
-      if (duplicate) return tx.stockCountLine.findUnique({ where: { id: lineId } });
+      if (duplicate) return this.blindLine(await tx.stockCountLine.findUnique({ where: { id: lineId } }));
 
       const updated = await tx.stockCountLine.updateMany({
         where: { id: lineId, version },
@@ -284,12 +284,15 @@ export class OperationsService {
       });
       if (updated.count !== 1) {
         const currentState = await tx.stockCountLine.findUnique({ where: { id: lineId } });
-        throw new ConflictException({ message: "La cantidad cambió en otro dispositivo", currentState });
+        throw new ConflictException({
+          message: "La cantidad cambió en otro dispositivo",
+          currentState: this.blindLine(currentState)
+        });
       }
       await tx.countLineMutation.create({
         data: { stockCountLineId: lineId, clientMutationId }
       });
-      return tx.stockCountLine.findUnique({ where: { id: lineId } });
+      return this.blindLine(await tx.stockCountLine.findUnique({ where: { id: lineId } }));
     });
   }
 
@@ -762,6 +765,15 @@ export class OperationsService {
       orderBy: { createdAt: "desc" },
       take: 200
     });
+  }
+
+  /** Quita del renglón todo lo que revelaría el stock esperado. */
+  private blindLine<T extends { snapshotQuantity?: unknown; movementVersionAtCount?: unknown }>(
+    line: T | null
+  ) {
+    if (!line) return line;
+    const { snapshotQuantity, movementVersionAtCount, ...rest } = line;
+    return rest;
   }
 
   private scopedLocation(user: AuthUser, requested?: string) {

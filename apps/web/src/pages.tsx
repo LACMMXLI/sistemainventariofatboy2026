@@ -608,10 +608,14 @@ function CountBlindCapture({ id }: { id: string }) {
     queryKey: ["count", id],
     queryFn: () => api.get<StockCount>(`/counts/${id}`)
   });
+  // La revisión previa es el juez final y la da el backend: se vuelve a pedir
+  // cada vez que se abre, nunca se sirve una respuesta vieja de caché.
   const { data: validation } = useQuery({
     queryKey: ["count-validation", id],
     queryFn: () => api.get<any>(`/counts/${id}/validate`),
-    enabled: showValidation
+    enabled: showValidation,
+    staleTime: 0,
+    gcTime: 0
   });
 
   async function syncDrafts() {
@@ -638,6 +642,26 @@ function CountBlindCapture({ id }: { id: string }) {
     window.addEventListener("online", syncDrafts);
     return () => window.removeEventListener("online", syncDrafts);
   }, [id]);
+
+  /**
+   * El renglón guardado se escribe directo en la caché con lo que respondió el
+   * backend: el avance y el botón de confirmar cambian en el mismo instante, sin
+   * depender de que llegue un refetch. La invalidación posterior solo reconcilia.
+   */
+  function applySavedLine(saved: CountLine) {
+    client.setQueryData<StockCount>(["count", id], (previous) =>
+      previous
+        ? {
+            ...previous,
+            lines: previous.lines?.map((line) =>
+              line.id === saved.id ? { ...line, ...saved } : line
+            )
+          }
+        : previous
+    );
+    void client.invalidateQueries({ queryKey: ["count", id] });
+    void client.invalidateQueries({ queryKey: ["counts"] });
+  }
 
   const complete = useMutation({
     mutationFn: () => api.post(`/counts/${id}/complete`, undefined, crypto.randomUUID()),
@@ -667,7 +691,15 @@ function CountBlindCapture({ id }: { id: string }) {
         {(["ALL", "PENDING", "COUNTED"] as const).map((value) => <button className={filter === value ? "active" : ""} onClick={() => setFilter(value)} key={value}>{value === "ALL" ? "Todos" : value === "PENDING" ? "Pendientes" : "Capturados"}</button>)}
       </div>
       <section className="count-list">
-        {filtered.map((line) => <CountInput key={line.id} countId={id} line={line} onSaved={() => void client.invalidateQueries({ queryKey: ["count", id] })} onQueued={() => setPendingOffline((value) => value + 1)} />)}
+        {filtered.map((line) => (
+          <CountInput
+            key={line.id}
+            countId={id}
+            line={line}
+            onSaved={applySavedLine}
+            onQueued={() => setPendingOffline((value) => value + 1)}
+          />
+        ))}
       </section>
       <div className="bottom-action">
         <div><strong>{allCaptured ? "Conteo listo para revisar" : `${count.lines.length - captured} productos pendientes`}</strong><small>La confirmación requiere conexión.</small></div>
@@ -798,7 +830,7 @@ function CountResultPage({ id }: { id: string }) {
   );
 }
 
-function CountInput({ countId, line, onSaved, onQueued }: { countId: string; line: CountLine; onSaved: () => void; onQueued: () => void }) {
+function CountInput({ countId, line, onSaved, onQueued }: { countId: string; line: CountLine; onSaved: (saved: CountLine) => void; onQueued: () => void }) {
   const toast = useToast();
   const [value, setValue] = useState(line.countedQuantity ?? "");
   const [notes, setNotes] = useState(line.countNotes ?? "");
@@ -845,7 +877,7 @@ function CountInput({ countId, line, onSaved, onQueued }: { countId: string; lin
       if (saved?.version !== undefined) version.current = saved.version;
       await removeDraft(draft.id);
       setState("saved");
-      onSaved();
+      onSaved(saved);
     } catch (error) {
       if (navigator.onLine) {
         setState("idle");
