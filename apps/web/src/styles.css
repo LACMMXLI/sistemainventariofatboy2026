@@ -1946,6 +1946,25 @@ input[type="checkbox"] {
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
+.toast-action {
+  justify-self: start;
+  margin-top: 8px;
+  padding: 7px 13px;
+  border: 1px solid color-mix(in srgb, var(--tone, var(--primary)) 40%, transparent);
+  border-radius: var(--r-xs);
+  background: color-mix(in srgb, var(--tone, var(--primary)) 15%, transparent);
+  color: var(--tone, var(--primary));
+  font-size: 0.775rem;
+  font-weight: 650;
+  transition: var(--transition);
+}
+.toast-action:hover {
+  background: color-mix(in srgb, var(--tone, var(--primary)) 26%, transparent);
+  border-color: var(--tone, var(--primary));
+  transform: translateY(-1px);
+}
+.toast-action:active { transform: translateY(0) scale(0.97); }
+
 .toast-close {
   width: 26px;
   height: 26px;

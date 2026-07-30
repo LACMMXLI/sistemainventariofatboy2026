@@ -19,16 +19,29 @@ import {
 
 type ToastTone = "success" | "error" | "warning" | "info";
 
+type ToastAction = { label: string; onClick: () => void };
+
 type Toast = {
   id: number;
   tone: ToastTone;
   title: string;
   detail?: string;
+  /** 0 = permanece hasta que el usuario decida. */
   duration: number;
+  action?: ToastAction;
+  key?: string;
   leaving?: boolean;
 };
 
-type ToastInput = { title: string; detail?: string; duration?: number };
+type ToastInput = {
+  title: string;
+  detail?: string;
+  /** 0 mantiene el aviso en pantalla hasta que se cierre o se use su acción. */
+  duration?: number;
+  action?: ToastAction;
+  /** Evita duplicados: si ya hay un aviso visible con esta llave, se ignora. */
+  key?: string;
+};
 
 type ToastApi = {
   success: (input: ToastInput | string) => void;
@@ -71,15 +84,27 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const push = useCallback(
     (tone: ToastTone, input: ToastInput | string) => {
-      const { title, detail, duration } = typeof input === "string" ? { title: input } as ToastInput : input;
+      const { title, detail, duration, action, key } =
+        typeof input === "string" ? ({ title: input } as ToastInput) : input;
       const id = nextId.current++;
       const life = duration ?? defaultDuration[tone];
-      // Máximo cuatro avisos en pantalla: más que eso deja de informar y empieza a estorbar.
-      setToasts((current) => [...current.slice(-3), { id, tone, title, detail, duration: life }]);
-      timers.current.set(
-        id,
-        setTimeout(() => dismiss(id), life)
-      );
+
+      setToasts((current) => {
+        if (key && current.some((toast) => toast.key === key && !toast.leaving)) return current;
+        const next = [...current, { id, tone, title, detail, duration: life, action, key }];
+        // Máximo cuatro avisos temporales: más que eso deja de informar y estorba.
+        // Los permanentes no se descartan, porque esperan una decisión.
+        const keep = new Set(next.filter((toast) => toast.duration === 0));
+        next.filter((toast) => toast.duration !== 0).slice(-3).forEach((toast) => keep.add(toast));
+        return next.filter((toast) => keep.has(toast));
+      });
+
+      if (life > 0) {
+        timers.current.set(
+          id,
+          setTimeout(() => dismiss(id), life)
+        );
+      }
     },
     [dismiss]
   );
@@ -117,6 +142,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 <div className="toast-body">
                   <strong>{toast.title}</strong>
                   {toast.detail && <span>{toast.detail}</span>}
+                  {toast.action && (
+                    <button
+                      type="button"
+                      className="toast-action"
+                      onClick={() => {
+                        toast.action?.onClick();
+                        dismiss(toast.id);
+                      }}
+                    >
+                      {toast.action.label}
+                    </button>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -126,7 +163,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 >
                   <IconX size={15} />
                 </button>
-                <i className="toast-progress" style={{ animationDuration: `${toast.duration}ms` }} />
+                {toast.duration > 0 && (
+                  <i className="toast-progress" style={{ animationDuration: `${toast.duration}ms` }} />
+                )}
               </article>
             );
           })}
