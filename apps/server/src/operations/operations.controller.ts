@@ -11,8 +11,18 @@ import {
   UseGuards
 } from "@nestjs/common";
 import { quantitySchema } from "@fatboy/shared";
+import { z } from "zod";
 import { AuthGuard, type AuthRequest, Roles, RolesGuard } from "../auth/auth.guard";
 import { OperationsService } from "./operations.service";
+
+const incidentSchema = z.object({
+  locationId: z.string().min(1),
+  type: z.enum(["MISSING_PRODUCT", "EXCESS_PRODUCT", "DAMAGED_PRODUCT", "RECEPTION_DIFFERENCE", "OTHER"]),
+  description: z.string().trim().min(5, "Describe qué pasó").max(500),
+  productId: z.string().min(1).optional().nullable(),
+  transferId: z.string().min(1).optional().nullable(),
+  quantityDifference: quantitySchema.optional().nullable()
+});
 
 @Controller()
 @UseGuards(AuthGuard, RolesGuard)
@@ -216,6 +226,12 @@ export class OperationsController {
   @Get("incidents")
   incidents(@Req() request: AuthRequest, @Query("locationId") locationId?: string) {
     return this.operations.listIncidents(request.user, locationId);
+  }
+
+  @Post("incidents")
+  @Roles("SYSTEM_OWNER", "ADMIN", "SUPERVISOR", "MANAGER")
+  createIncident(@Req() request: AuthRequest, @Body() body: unknown) {
+    return this.operations.createIncident(request.user, incidentSchema.parse(body));
   }
 
   @Post("incidents/:id/resolve")

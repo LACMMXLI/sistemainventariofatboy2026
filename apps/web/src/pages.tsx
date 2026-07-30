@@ -1254,11 +1254,58 @@ export function ReceivingPage() {
   );
 }
 
+const incidentTypes = [
+  ["MISSING_PRODUCT", "No llegó el producto"],
+  ["DAMAGED_PRODUCT", "Llegó dañado"],
+  ["RECEPTION_DIFFERENCE", "Llegó menos de lo enviado"],
+  ["EXCESS_PRODUCT", "Llegó de más"],
+  ["OTHER", "Otro"]
+] as const;
+
+function incidentTypeLabel(type: string) {
+  return incidentTypes.find(([value]) => value === type)?.[1] ?? type.replaceAll("_", " ");
+}
+
 export function IncidentsPage() {
-  const { user, locationId } = useApp();
+  const { user, locationId, locations } = useApp();
   const client = useQueryClient();
   const toast = useToast();
+  const [reporting, setReporting] = useState(false);
+  const canReport = !["DRIVER"].includes(user.role);
   const { data: incidents = [] } = useQuery({ queryKey: ["incidents", locationId], queryFn: () => api.get<Incident[]>(withLocation("/incidents", locationId)) });
+  const { data: products = [] } = useQuery({
+    queryKey: ["products"],
+    queryFn: () => api.get<Product[]>("/products"),
+    enabled: reporting
+  });
+  const { data: transfers = [] } = useQuery({
+    queryKey: ["transfers", locationId],
+    queryFn: () => api.get<Transfer[]>(withLocation("/transfers", locationId)),
+    enabled: reporting
+  });
+  const report = useMutation({
+    mutationFn: (body: Record<string, unknown>) => api.post("/incidents", body),
+    onSuccess: () => {
+      setReporting(false);
+      void client.invalidateQueries({ queryKey: ["incidents"] });
+      void client.invalidateQueries({ queryKey: ["dashboard"] });
+      toast.success({ title: "Incidencia registrada", detail: "Queda con folio y responsable para seguimiento." });
+    },
+    onError: (cause) => toast.error({ title: "No se pudo registrar", detail: errorMessage(cause) })
+  });
+
+  function submitIncident(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    report.mutate({
+      locationId: String(form.get("locationId")),
+      type: String(form.get("type")),
+      description: String(form.get("description")).trim(),
+      productId: String(form.get("productId") || "") || null,
+      transferId: String(form.get("transferId") || "") || null,
+      quantityDifference: String(form.get("quantityDifference") || "") || null
+    });
+  }
   const resolve = useMutation({
     mutationFn: (id: string) => api.post(`/incidents/${id}/resolve`),
     onSuccess: () => {
@@ -1268,8 +1315,63 @@ export function IncidentsPage() {
     onError: (cause) => toast.error({ title: "No se pudo resolver", detail: errorMessage(cause) })
   });
   return (
-    <Page icon={<IconAlertTriangle />} title="Incidencias" subtitle="Diferencias y daños que requieren seguimiento">
-      <section className="panel data-panel">{incidents.length ? incidents.map((incident) => <article className="incident-row" key={incident.id}><span className="kpi-icon red"><IconAlertTriangle /></span><div><strong>{incident.product?.name || incident.type.replaceAll("_", " ")}</strong><small><span className="folio">{incident.folio}</span> · {incident.location.name} · {incident.description} · {date(incident.createdAt)}</small></div><Status value={incident.status} />{incident.status === "OPEN" && !["MANAGER", "DRIVER"].includes(user.role) && <button className="button ghost" onClick={() => resolve.mutate(incident.id)}>Resolver</button>}</article>) : <Empty>No hay incidencias registradas.</Empty>}</section>
+    <Page
+      icon={<IconAlertTriangle />}
+      title="Incidencias"
+      subtitle="Diferencias y daños que requieren seguimiento"
+      action={canReport && <button className="button primary" onClick={() => setReporting(true)}><IconPlus size={19} />Reportar incidencia</button>}
+    >
+      <section className="panel data-panel">{incidents.length ? incidents.map((incident) => <article className="incident-row" key={incident.id}><span className="kpi-icon red"><IconAlertTriangle /></span><div><strong>{incident.product?.name || incidentTypeLabel(incident.type)}</strong><small className="muted">{incidentTypeLabel(incident.type)}</small><small><span className="folio">{incident.folio}</span> · {incident.location.name} · {incident.description} · {date(incident.createdAt)}</small></div><Status value={incident.status} />{incident.status === "OPEN" && !["MANAGER", "DRIVER"].includes(user.role) && <button className="button ghost" onClick={() => resolve.mutate(incident.id)}>Resolver</button>}</article>) : <Empty>No hay incidencias registradas.</Empty>}</section>
+      {reporting && (
+        <Modal
+          title="Reportar incidencia"
+          description="Deja constancia de lo que faltó, llegó dañado o no coincidió."
+          onClose={() => setReporting(false)}
+          actions={
+            <>
+              <button className="button ghost" type="button" onClick={() => setReporting(false)}>Cancelar</button>
+              <button className="button primary" type="submit" form="incident-form" disabled={report.isPending}>
+                {report.isPending ? "Registrando…" : "Registrar incidencia"}
+              </button>
+            </>
+          }
+        >
+          <form id="incident-form" onSubmit={submitIncident}>
+            <label>Sucursal afectada
+              <select name="locationId" required defaultValue={locationId || user.locationId || ""}>
+                <option value="">Selecciona</option>
+                {locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </label>
+            <label>Qué pasó
+              <select name="type" required defaultValue="MISSING_PRODUCT">
+                {incidentTypes.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+              </select>
+            </label>
+            <label>Producto (opcional)
+              <select name="productId" defaultValue="">
+                <option value="">Sin producto específico</option>
+                {products.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </label>
+            <label>Cantidad involucrada (opcional)
+              <input name="quantityDifference" type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" />
+            </label>
+            <label>Surtido relacionado (opcional)
+              <select name="transferId" defaultValue="">
+                <option value="">Sin surtido relacionado</option>
+                {transfers.map((item) => (
+                  <option key={item.id} value={item.id}>{item.folio} · {item.destination.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>Descripción
+              <textarea name="description" required minLength={5} rows={3} placeholder="Ej. Pedí 10 botes de mayonesa y solo bajaron 6 del camión." />
+            </label>
+            {report.error && <div className="form-error">{errorMessage(report.error)}</div>}
+          </form>
+        </Modal>
+      )}
     </Page>
   );
 }

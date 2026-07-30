@@ -6,6 +6,7 @@ import {
   NotFoundException
 } from "@nestjs/common";
 import { Prisma } from "../generated/prisma/client";
+import type { IncidentType } from "../generated/prisma/enums";
 import type { AuthUser } from "../auth/auth.guard";
 import { PrismaService } from "../prisma.service";
 import { InventoryService } from "../inventory/inventory.service";
@@ -747,6 +748,54 @@ export class OperationsService {
       include: { location: true, product: true, reportedBy: { select: { id: true, name: true } } },
       orderBy: { createdAt: "desc" }
     });
+  }
+
+  /**
+   * Incidencia levantada a mano: el caso típico es "lo pedí / me lo mandaron y
+   * no llegó". Queda con folio, quién la reportó y contra qué surtido, para que
+   * después no sea la palabra de uno contra la del otro.
+   */
+  async createIncident(
+    user: AuthUser,
+    input: {
+      locationId: string;
+      type: IncidentType;
+      description: string;
+      productId?: string | null;
+      transferId?: string | null;
+      quantityDifference?: string | null;
+    }
+  ) {
+    if (user.role === "DRIVER") throw new ForbiddenException();
+    this.assertLocation(user, input.locationId);
+
+    const location = await this.prisma.location.findFirst({
+      where: { id: input.locationId, active: true }
+    });
+    if (!location) throw new BadRequestException("Sucursal no válida");
+
+    if (input.transferId) {
+      const transfer = await this.prisma.transfer.findUnique({ where: { id: input.transferId } });
+      if (!transfer) throw new BadRequestException("El surtido referido no existe");
+    }
+
+    return this.prisma.$transaction(async (tx) =>
+      tx.incident.create({
+        data: {
+          folio: await nextFolio(tx, "INC"),
+          type: input.type,
+          locationId: input.locationId,
+          productId: input.productId || null,
+          transferId: input.transferId || null,
+          description: input.description,
+          quantityDifference: input.quantityDifference
+            ? new Prisma.Decimal(input.quantityDifference)
+            : null,
+          reportedByUserId: user.id
+        },
+        include: { location: true, product: true, reportedBy: { select: { id: true, name: true } } }
+      })
+    );
   }
 
   async resolveIncident(user: AuthUser, id: string) {
