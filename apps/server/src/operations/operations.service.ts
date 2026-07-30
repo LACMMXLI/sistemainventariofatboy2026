@@ -10,6 +10,7 @@ import type { AuthUser } from "../auth/auth.guard";
 import { PrismaService } from "../prisma.service";
 import { InventoryService } from "../inventory/inventory.service";
 import { countAdjustment, receptionOutcome } from "../domain";
+import { nextFolio } from "../folio";
 
 type RequestLineInput = { productId: string; quantity: string; notes?: string };
 type TransferLineInput = {
@@ -147,6 +148,7 @@ export class OperationsService {
       const byProduct = new Map(balances.map((balance) => [balance.productId, balance]));
       return tx.stockCount.create({
         data: {
+          folio: await nextFolio(tx, "CON"),
           locationId,
           startedByUserId: user.id,
           notes,
@@ -332,21 +334,24 @@ export class OperationsService {
     this.assertLocation(user, locationId);
     const positive = lines.filter((line) => new Prisma.Decimal(line.quantity).greaterThan(0));
     if (!positive.length) throw new BadRequestException("Agrega al menos un producto");
-    return this.prisma.supplyRequest.create({
-      data: {
-        locationId,
-        requestedByUserId: user.id,
-        notes,
-        lines: {
-          create: positive.map((line) => ({
-            productId: line.productId,
-            requestedQuantity: new Prisma.Decimal(line.quantity),
-            notes: line.notes
-          }))
-        }
-      },
-      include: { lines: true }
-    });
+    return this.prisma.$transaction(async (tx) =>
+      tx.supplyRequest.create({
+        data: {
+          folio: await nextFolio(tx, "SOL"),
+          locationId,
+          requestedByUserId: user.id,
+          notes,
+          lines: {
+            create: positive.map((line) => ({
+              productId: line.productId,
+              requestedQuantity: new Prisma.Decimal(line.quantity),
+              notes: line.notes
+            }))
+          }
+        },
+        include: { lines: true }
+      })
+    );
   }
 
   async submitRequest(user: AuthUser, id: string) {
@@ -442,24 +447,27 @@ export class OperationsService {
       }
     }
 
-    return this.prisma.transfer.create({
-      data: {
-        destinationLocationId,
-        sourceLocationId,
-        preparedByUserId: user.id,
-        status: "PREPARING",
-        preparedAt: new Date(),
-        notes,
-        lines: {
-          create: lines.map((line) => ({
-            productId: line.productId,
-            sentQuantity: new Prisma.Decimal(line.sentQuantity),
-            supplyRequestLineId: line.supplyRequestLineId
-          }))
-        }
-      },
-      include: { lines: { include: { product: true } } }
-    });
+    return this.prisma.$transaction(async (tx) =>
+      tx.transfer.create({
+        data: {
+          folio: await nextFolio(tx, "SUR"),
+          destinationLocationId,
+          sourceLocationId,
+          preparedByUserId: user.id,
+          status: "PREPARING",
+          preparedAt: new Date(),
+          notes,
+          lines: {
+            create: lines.map((line) => ({
+              productId: line.productId,
+              sentQuantity: new Prisma.Decimal(line.sentQuantity),
+              supplyRequestLineId: line.supplyRequestLineId
+            }))
+          }
+        },
+        include: { lines: { include: { product: true } } }
+      })
+    );
   }
 
   async assignDriver(user: AuthUser, id: string, driverUserId: string) {
@@ -599,6 +607,7 @@ export class OperationsService {
         if (hasDifference) {
           await tx.incident.create({
             data: {
+              folio: await nextFolio(tx, "INC"),
               type: input.damaged ? "DAMAGED_PRODUCT" : "RECEPTION_DIFFERENCE",
               locationId: transfer.destinationLocationId,
               transferId: transfer.id,

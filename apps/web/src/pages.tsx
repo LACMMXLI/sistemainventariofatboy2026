@@ -219,8 +219,12 @@ export function ProductsPage() {
     },
     onError: (cause) => toast.error({ title: "No se pudo cambiar el estatus", detail: errorMessage(cause) })
   });
+  // Se busca por nombre, folio o SKU: cualquiera de los tres identifica al producto.
+  const term = search.trim().toLocaleLowerCase("es-MX");
   const visible = products.filter((product) =>
-    product.name.toLocaleLowerCase("es-MX").includes(search.toLocaleLowerCase("es-MX")) &&
+    [product.name, product.folio, product.sku ?? ""].some((field) =>
+      field.toLocaleLowerCase("es-MX").includes(term)
+    ) &&
     (!categoryId || product.categoryId === categoryId) &&
     (!unitId || product.unitId === unitId) &&
     (!activeFilter || String(product.active) === activeFilter)
@@ -252,7 +256,7 @@ export function ProductsPage() {
       action={canEdit && <button className="button primary" onClick={() => { setEditing(null); setShowForm(true); }}><IconPlus size={19} />Nuevo producto</button>}
     >
       <section className="panel filters product-filters">
-        <label className="search"><IconSearch size={19} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto…" /></label>
+        <label className="search"><IconSearch size={19} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por nombre, folio o SKU…" /></label>
         <label><span>Categoría</span><select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value="">Todas</option>{categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label><span>Unidad</span><select value={unitId} onChange={(event) => setUnitId(event.target.value)}><option value="">Todas</option>{units.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label><span>Estatus</span><select value={activeFilter} onChange={(event) => setActiveFilter(event.target.value)}><option value="">Todos</option><option value="true">Activos</option><option value="false">Inactivos</option></select></label>
@@ -265,7 +269,7 @@ export function ProductsPage() {
               <div className="table-head"><span>Producto</span><span>Categoría</span><span>Unidad</span><span>Sucursales</span><span>Estatus</span><span>Actualización</span><span>Acciones</span></div>
               {visible.map((product) => (
                 <div className="table-row" key={product.id}>
-                  <span className="product-cell"><span className="product-thumb">{product.imageUrl ? <img src={product.imageUrl} alt="" /> : <IconBox size={22} />}</span><span><strong>{product.name}</strong><small>{product.sku || "Sin SKU"}</small></span></span>
+                  <span className="product-cell"><span className="product-thumb">{product.imageUrl ? <img src={product.imageUrl} alt="" /> : <IconBox size={22} />}</span><span><strong>{product.name}</strong><small><span className="folio">{product.folio}</span>{product.sku ? ` · ${product.sku}` : ""}</small></span></span>
                   <span><span className="category-pill">{product.category.name}</span></span>
                   <span>{product.unit.symbol}</span>
                   <span className="location-dots">{product.locations.map(({ location }) => <i title={location.name} key={location.id}>{location.code.slice(0, 2)}</i>)}</span>
@@ -335,7 +339,7 @@ function ProductCard({
     <article className="mobile-card">
       <div className="mobile-card-main">
         <span className="product-thumb">{product.imageUrl ? <img src={product.imageUrl} alt="" /> : <IconBox size={22} />}</span>
-        <span><strong>{product.name}</strong><small>{product.category.name} · {product.unit.symbol}</small></span>
+        <span><strong>{product.name}</strong><small><span className="folio">{product.folio}</span> · {product.category.name} · {product.unit.symbol}</small></span>
       </div>
       <div className="mobile-card-actions">
         <Status value={product.active ? "Activo" : "Inactivo"} />
@@ -404,7 +408,7 @@ export function CountsPage() {
       {active && <section className="panel active-count"><div><span className="eyebrow">CONTEO EN PROGRESO</span><h2>{active.location.name}</h2><p>Continúa donde te quedaste. Los cambios se guardan producto por producto.</p></div><button className="button primary" onClick={() => navigate(`/conteos/${active.id}`)}>Continuar</button></section>}
       <section className="panel data-panel">
         <h2>Historial</h2>
-        {counts.length ? counts.map((count) => <article className="list-row" key={count.id}><div><strong>{count.location.name}</strong><small>{date(count.startedAt)} · {count._count?.lines ?? 0} productos</small></div><Status value={count.status} /></article>) : <Empty>No hay conteos registrados.</Empty>}
+        {counts.length ? counts.map((count) => <article className="list-row" key={count.id}><div><strong>{count.location.name}</strong><small><span className="folio">{count.folio}</span> · {date(count.startedAt)} · {count._count?.lines ?? 0} productos</small></div><Status value={count.status} /></article>) : <Empty>No hay conteos registrados.</Empty>}
       </section>
     </Page>
   );
@@ -650,7 +654,7 @@ export function RequestsPage() {
   return (
     <Page icon={<IconReceipt />} title="Solicitudes" subtitle="Productos requeridos por la sucursal" action={<button className="button primary" onClick={() => setCreating(true)}><IconPlus size={19} />Nueva solicitud</button>}>
       {creating && <section className="panel request-builder"><div className="section-heading"><div><h2>Nueva solicitud</h2><p>Captura únicamente lo que necesita la sucursal.</p></div><button className="icon-button" onClick={() => setCreating(false)}><IconX /></button></div>{products.map((product) => <label className="request-line" key={product.id}><span><strong>{product.name}</strong><small>{product.unit.symbol}</small></span><input type="number" min="0" step={product.unit.allowDecimals ? "0.01" : "1"} inputMode="decimal" placeholder="0" value={amounts[product.id] ?? ""} onChange={(event) => setAmounts({ ...amounts, [product.id]: event.target.value })} /></label>)}<div className="sticky-submit"><button className="button primary" disabled={!Object.values(amounts).some((value) => Number(value) > 0) || create.isPending} onClick={() => create.mutate()}>Enviar solicitud</button></div>{create.error && <div className="form-error">{create.error.message}</div>}</section>}
-      <section className="panel data-panel">{requests.length ? requests.map((request) => <article className="list-row" key={request.id}><div><strong>Solicitud #{request.id.slice(-6).toUpperCase()}</strong><small>{request.location.name} · {request.lines.length} productos · {date(request.createdAt)}</small></div><Status value={request.status} />{["SYSTEM_OWNER", "ADMIN"].includes(user.role) && ["PENDING", "PARTIAL"].includes(request.status) && <button className="button ghost" disabled={createTransfer.isPending} onClick={() => createTransfer.mutate(request)}>Crear surtido</button>}</article>) : <Empty>No hay solicitudes registradas.</Empty>}</section>
+      <section className="panel data-panel">{requests.length ? requests.map((request) => <article className="list-row" key={request.id}><div><strong><span className="folio">{request.folio}</span></strong><small>{request.location.name} · {request.lines.length} productos · {date(request.createdAt)}</small></div><Status value={request.status} />{["SYSTEM_OWNER", "ADMIN"].includes(user.role) && ["PENDING", "PARTIAL"].includes(request.status) && <button className="button ghost" disabled={createTransfer.isPending} onClick={() => createTransfer.mutate(request)}>Crear surtido</button>}</article>) : <Empty>No hay solicitudes registradas.</Empty>}</section>
     </Page>
   );
 }
@@ -721,7 +725,7 @@ export function TransfersPage({ driverMode = false }: { driverMode?: boolean }) 
   return (
     <Page icon={isDriverView ? <IconTruck /> : <IconPackageExport />} title={isDriverView ? "Mis entregas" : "Surtidos"} subtitle={isDriverView ? "Entregas asignadas a tu usuario" : "Preparación y seguimiento de producto"} action={!driverMode && !["DRIVER", "MANAGER"].includes(user.role) && <button className="button primary" onClick={() => setCreating(true)}><IconPlus size={19} />Crear surtido</button>}>
       {creating && <section className="panel request-builder"><div className="section-heading"><div><h2>Nuevo surtido</h2><p>Selecciona origen y destino, luego agrega productos.</p></div><button className="icon-button" onClick={() => setCreating(false)}><IconX /></button></div><div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px"}}><label>Origen<select value={source} onChange={(event) => setSource(event.target.value)}><option value="">Selecciona</option>{locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Destino<select value={destination} onChange={(event) => setDestination(event.target.value)}><option value="">Selecciona</option>{locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>{products.map((product) => <label className="request-line" key={product.id}><span><strong>{product.name}</strong><small>{product.unit.symbol}</small></span><input type="number" min="0" inputMode="decimal" placeholder="0" value={amounts[product.id] ?? ""} onChange={(event) => setAmounts({ ...amounts, [product.id]: event.target.value })} /></label>)}<div className="sticky-submit"><button className="button primary" disabled={!source || !destination || !Object.values(amounts).some((value) => Number(value) > 0) || create.isPending} onClick={() => create.mutate()}>{create.isPending ? "Preparando..." : "Preparar surtido"}</button></div>{create.error && <div className="form-error">{typeof create.error.message === 'string' ? create.error.message : JSON.stringify(create.error.message)}</div>}</section>}
-      <section className="delivery-grid">{transfers.length ? transfers.map((transfer) => <article className="delivery-card" key={transfer.id}><div className="delivery-heading"><div><span className="eyebrow">{transfer.destination.name}</span><h2>Surtido #{transfer.id.slice(-6).toUpperCase()}</h2></div><Status value={transfer.status} /></div><TransferTimeline status={transfer.status} /><ul>{transfer.lines.map((line) => <li key={line.id}><span>{line.product.name}</span><strong>{quantity(line.sentQuantity)} {line.product.unit.symbol}</strong></li>)}</ul>{transfer.driver && <p className="muted">🚗 {transfer.driver.name}</p>}{["SYSTEM_OWNER", "ADMIN"].includes(user.role) && transfer.status === "PREPARING" && <label className="driver-select">Asignar repartidor<select defaultValue="" onChange={(event) => event.target.value && assign.mutate({ id: transfer.id, driverUserId: event.target.value })}><option value="">Selecciona</option>{users.filter((item) => item.role === "DRIVER" && item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}{user.role === "DRIVER" && transfer.status === "ASSIGNED" && <button className="button primary wide" onClick={() => transition.mutate({ id: transfer.id, action: "start" })}>Iniciar reparto</button>}{user.role === "DRIVER" && transfer.status === "IN_ROUTE" && <button className="button primary wide" onClick={() => transition.mutate({ id: transfer.id, action: "deliver" })}>Marcar entrega</button>}</article>) : <Empty>No hay entregas en esta vista.</Empty>}</section>
+      <section className="delivery-grid">{transfers.length ? transfers.map((transfer) => <article className="delivery-card" key={transfer.id}><div className="delivery-heading"><div><span className="eyebrow">{transfer.destination.name}</span><h2><span className="folio">{transfer.folio}</span></h2></div><Status value={transfer.status} /></div><TransferTimeline status={transfer.status} /><ul>{transfer.lines.map((line) => <li key={line.id}><span>{line.product.name}</span><strong>{quantity(line.sentQuantity)} {line.product.unit.symbol}</strong></li>)}</ul>{transfer.driver && <p className="muted">🚗 {transfer.driver.name}</p>}{["SYSTEM_OWNER", "ADMIN"].includes(user.role) && transfer.status === "PREPARING" && <label className="driver-select">Asignar repartidor<select defaultValue="" onChange={(event) => event.target.value && assign.mutate({ id: transfer.id, driverUserId: event.target.value })}><option value="">Selecciona</option>{users.filter((item) => item.role === "DRIVER" && item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}{user.role === "DRIVER" && transfer.status === "ASSIGNED" && <button className="button primary wide" onClick={() => transition.mutate({ id: transfer.id, action: "start" })}>Iniciar reparto</button>}{user.role === "DRIVER" && transfer.status === "IN_ROUTE" && <button className="button primary wide" onClick={() => transition.mutate({ id: transfer.id, action: "deliver" })}>Marcar entrega</button>}</article>) : <Empty>No hay entregas en esta vista.</Empty>}</section>
     </Page>
   );
 }
@@ -796,7 +800,7 @@ export function ReceivingPage() {
                 <div className="delivery-heading">
                   <div>
                     <span className="eyebrow">{transfer.destination.name}</span>
-                    <h2>Surtido #{transfer.id.slice(-6).toUpperCase()}</h2>
+                    <h2><span className="folio">{transfer.folio}</span></h2>
                   </div>
                   <Status value={transfer.status} />
                 </div>
@@ -822,7 +826,7 @@ export function ReceivingPage() {
           <div className="section-heading">
             <div>
               <h2>Recibir surtido</h2>
-              <p>{selected.destination.name} · #{selected.id.slice(-6).toUpperCase()}</p>
+              <p>{selected.destination.name} · {selected.folio}</p>
             </div>
             <button className="icon-button" onClick={() => setSelected(null)}>
               <IconX />
@@ -880,7 +884,7 @@ export function ReceivingPage() {
       {showSummary && selected && (
         <Modal
           title="Resumen de recepción"
-          description={`${selected.destination.name} · #${selected.id.slice(-6).toUpperCase()}`}
+          description={`${selected.destination.name} · ${selected.folio}`}
           onClose={() => setShowSummary(false)}
           actions={
             <>
@@ -932,7 +936,7 @@ export function IncidentsPage() {
   });
   return (
     <Page icon={<IconAlertTriangle />} title="Incidencias" subtitle="Diferencias y daños que requieren seguimiento">
-      <section className="panel data-panel">{incidents.length ? incidents.map((incident) => <article className="incident-row" key={incident.id}><span className="kpi-icon red"><IconAlertTriangle /></span><div><strong>{incident.product?.name || incident.type.replaceAll("_", " ")}</strong><small>{incident.location.name} · {incident.description} · {date(incident.createdAt)}</small></div><Status value={incident.status} />{incident.status === "OPEN" && !["MANAGER", "DRIVER"].includes(user.role) && <button className="button ghost" onClick={() => resolve.mutate(incident.id)}>Resolver</button>}</article>) : <Empty>No hay incidencias registradas.</Empty>}</section>
+      <section className="panel data-panel">{incidents.length ? incidents.map((incident) => <article className="incident-row" key={incident.id}><span className="kpi-icon red"><IconAlertTriangle /></span><div><strong>{incident.product?.name || incident.type.replaceAll("_", " ")}</strong><small><span className="folio">{incident.folio}</span> · {incident.location.name} · {incident.description} · {date(incident.createdAt)}</small></div><Status value={incident.status} />{incident.status === "OPEN" && !["MANAGER", "DRIVER"].includes(user.role) && <button className="button ghost" onClick={() => resolve.mutate(incident.id)}>Resolver</button>}</article>) : <Empty>No hay incidencias registradas.</Empty>}</section>
     </Page>
   );
 }
@@ -955,7 +959,7 @@ export function ReportsPage() {
   );
 }
 
-type UserRow = { id: string; name: string; email: string; role: string; locationId?: string | null; active: boolean; lastLoginAt?: string | null };
+type UserRow = { id: string; folio: string; name: string; email: string; role: string; locationId?: string | null; active: boolean; lastLoginAt?: string | null };
 
 const creatableRoles = ["ADMIN", "MANAGER", "DRIVER"] as const;
 
@@ -1056,7 +1060,7 @@ export function UsersPage() {
             <div>
               <strong>{item.name}</strong>
               <small>
-                {item.email} · {roleLabelEs(item.role)}
+                <span className="folio">{item.folio}</span> · {item.email} · {roleLabelEs(item.role)}
                 {item.locationId ? ` · ${locations.find((location) => location.id === item.locationId)?.name ?? ""}` : ""}
               </small>
             </div>
@@ -1219,7 +1223,7 @@ export function CatalogPage() {
           </div>
           {locations.map((item) => (
             <div className="list-row" key={item.id}>
-              <div><strong>{item.name}</strong><small>{item.code}</small></div>
+              <div><strong>{item.name}</strong><small><span className="folio">{item.folio}</span> · {item.code}</small></div>
               {canEdit && <span className="row-actions"><button aria-label={`Editar ${item.name}`} onClick={() => { setEditingLocation(item); setShowLocationForm(true); }}><IconPencil size={17} /></button></span>}
             </div>
           ))}
@@ -1231,7 +1235,7 @@ export function CatalogPage() {
           </div>
           {categories.map((item) => (
             <div className="list-row" key={item.id}>
-              <div><strong>{item.name}</strong></div>
+              <div><strong>{item.name}</strong><small className="folio">{item.folio}</small></div>
               {canEdit && <span className="row-actions"><button aria-label={`Editar ${item.name}`} onClick={() => { setEditingCategory(item); setShowCategoryForm(true); }}><IconPencil size={17} /></button></span>}
             </div>
           ))}
@@ -1243,7 +1247,7 @@ export function CatalogPage() {
           </div>
           {units.map((item) => (
             <div className="list-row" key={item.id}>
-              <div><strong>{item.name}</strong><small>{item.symbol}</small></div>
+              <div><strong>{item.name}</strong><small><span className="folio">{item.folio}</span> · {item.symbol}</small></div>
               {canEdit && <span className="row-actions"><button aria-label={`Editar ${item.name}`} onClick={() => { setEditingUnit(item); setShowUnitForm(true); }}><IconPencil size={17} /></button></span>}
             </div>
           ))}

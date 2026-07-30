@@ -79,8 +79,17 @@ enum IncidentStatus {
   CANCELLED
 }
 
+/// Contadores de folio, uno por serie ("PRD", "SUR-2026", …).
+/// El incremento se hace con un INSERT ... ON CONFLICT DO UPDATE RETURNING,
+/// que es atómico, así que dos altas simultáneas nunca reciben el mismo número.
+model FolioCounter {
+  key   String @id
+  value Int    @default(0)
+}
+
 model User {
   id                 String              @id @default(cuid())
+  folio              String              @unique
   name               String
   email              String              @unique
   passwordHash       String
@@ -122,6 +131,7 @@ model RefreshSession {
 
 model Location {
   id                String              @id @default(cuid())
+  folio             String              @unique
   name              String
   code              String              @unique
   type              LocationType        @default(BRANCH)
@@ -141,6 +151,7 @@ model Location {
 
 model Unit {
   id            String    @id @default(cuid())
+  folio         String    @unique
   name          String    @unique
   symbol        String
   allowDecimals Boolean   @default(false)
@@ -151,6 +162,7 @@ model Unit {
 
 model Category {
   id        String    @id @default(cuid())
+  folio     String    @unique
   name      String    @unique
   sortOrder Int       @default(0)
   active    Boolean   @default(true)
@@ -159,6 +171,7 @@ model Category {
 
 model Product {
   id             String              @id @default(cuid())
+  folio          String              @unique
   name           String
   normalizedName String              @unique
   sku            String?             @unique
@@ -235,6 +248,7 @@ model InventoryMovement {
 
 model StockCount {
   id                String           @id @default(cuid())
+  folio             String           @unique
   locationId        String
   status            CountStatus      @default(IN_PROGRESS)
   startedByUserId   String
@@ -287,6 +301,7 @@ model CountLineMutation {
 
 model SupplyRequest {
   id                String              @id @default(cuid())
+  folio             String              @unique
   locationId        String
   requestedByUserId String
   status            RequestStatus       @default(DRAFT)
@@ -317,6 +332,7 @@ model SupplyRequestLine {
 
 model Transfer {
   id                    String          @id @default(cuid())
+  folio                 String          @unique
   destinationLocationId String
   sourceLocationId      String?
   status                TransferStatus  @default(DRAFT)
@@ -362,6 +378,7 @@ model TransferLine {
 
 model Incident {
   id                  String         @id @default(cuid())
+  folio               String         @unique
   type                IncidentType
   locationId          String
   transferId          String?

@@ -1,8 +1,9 @@
-export type Location = { id: string; name: string; code: string };
-export type Unit = { id: string; name: string; symbol: string; allowDecimals: boolean };
-export type Category = { id: string; name: string };
+export type Location = { id: string; folio: string; name: string; code: string };
+export type Unit = { id: string; folio: string; name: string; symbol: string; allowDecimals: boolean };
+export type Category = { id: string; folio: string; name: string };
 export type Product = {
   id: string;
+  folio: string;
   name: string;
   sku?: string | null;
   active: boolean;
@@ -49,6 +50,7 @@ export type CountLine = {
 };
 export type StockCount = {
   id: string;
+  folio: string;
   locationId: string;
   status: "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
   startedAt: string;
@@ -58,6 +60,7 @@ export type StockCount = {
 };
 export type SupplyRequest = {
   id: string;
+  folio: string;
   status: string;
   createdAt: string;
   location: Location;
@@ -70,6 +73,7 @@ export type SupplyRequest = {
 };
 export type Transfer = {
   id: string;
+  folio: string;
   status: string;
   destinationLocationId: string;
   destination: Location;
@@ -83,6 +87,7 @@ export type Transfer = {
 };
 export type Incident = {
   id: string;
+  folio: string;
   type: string;
   description: string;
   quantityDifference?: string | null;

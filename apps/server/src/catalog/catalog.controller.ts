@@ -17,6 +17,7 @@ import { productSchema } from "@fatboy/shared";
 import { hash } from "bcryptjs";
 import { AuthGuard, type AuthRequest, Roles, RolesGuard } from "../auth/auth.guard";
 import { PrismaService } from "../prisma.service";
+import { nextFolio } from "../folio";
 
 @Controller()
 @UseGuards(AuthGuard, RolesGuard)
@@ -42,7 +43,9 @@ export class CatalogController {
     if (!name || name.length < 2 || !code || code.length > 12) {
       throw new BadRequestException("Nombre y código de sucursal son obligatorios");
     }
-    const location = await this.prisma.location.create({ data: { name, code } });
+    const location = await this.prisma.$transaction(async (tx) =>
+      tx.location.create({ data: { folio: await nextFolio(tx, "SUC"), name, code } })
+    );
     await this.audit(request, "CREATE", "Location", location.id, null, location);
     return location;
   }
@@ -96,14 +99,17 @@ export class CatalogController {
     if (body.decimalPlaces !== undefined && (!Number.isInteger(body.decimalPlaces) || body.decimalPlaces < 0 || body.decimalPlaces > 4)) {
       throw new BadRequestException("Los decimales deben estar entre 0 y 4");
     }
-    const unit = await this.prisma.unit.create({
-      data: {
-        name,
-        symbol,
-        allowDecimals: body.allowDecimals ?? false,
-        decimalPlaces: body.decimalPlaces ?? 0
-      }
-    });
+    const unit = await this.prisma.$transaction(async (tx) =>
+      tx.unit.create({
+        data: {
+          folio: await nextFolio(tx, "UNI"),
+          name,
+          symbol,
+          allowDecimals: body.allowDecimals ?? false,
+          decimalPlaces: body.decimalPlaces ?? 0
+        }
+      })
+    );
     await this.audit(request, "CREATE", "Unit", unit.id, null, unit);
     return unit;
   }
@@ -159,9 +165,11 @@ export class CatalogController {
   ) {
     const name = body.name?.trim();
     if (!name || name.length < 2) throw new BadRequestException("El nombre de la categoría no es válido");
-    const category = await this.prisma.category.create({
-      data: { name, sortOrder: body.sortOrder ?? 0 }
-    });
+    const category = await this.prisma.$transaction(async (tx) =>
+      tx.category.create({
+        data: { folio: await nextFolio(tx, "CAT"), name, sortOrder: body.sortOrder ?? 0 }
+      })
+    );
     await this.audit(request, "CREATE", "Category", category.id, null, category);
     return category;
   }
@@ -249,9 +257,11 @@ export class CatalogController {
     const normalizedName = input.name.trim().toLocaleLowerCase("es-MX");
     const exists = await this.prisma.product.findUnique({ where: { normalizedName } });
     if (exists) throw new ConflictException("Ya existe un producto con ese nombre");
-    const product = await this.prisma.product.create({
-      data: { ...input, normalizedName }
-    });
+    const product = await this.prisma.$transaction(async (tx) =>
+      tx.product.create({
+        data: { ...input, normalizedName, folio: await nextFolio(tx, "PRD") }
+      })
+    );
     await this.audit(request, "CREATE", "Product", product.id, null, product);
     return product;
   }
@@ -302,6 +312,7 @@ export class CatalogController {
       where: request.user.role === "SYSTEM_OWNER" ? {} : { hiddenFromAdmin: false },
       select: {
         id: true,
+        folio: true,
         name: true,
         email: true,
         role: true,
@@ -327,17 +338,21 @@ export class CatalogController {
   ) {
     if (body.password.length < 12) throw new ConflictException("La contraseña debe tener al menos 12 caracteres");
     if (body.role === "MANAGER" && !body.locationId) throw new ConflictException("El encargado requiere sucursal");
-    const user = await this.prisma.user.create({
-      data: {
-        name: body.name.trim(),
-        email: body.email.trim().toLowerCase(),
-        passwordHash: await hash(body.password, 12),
-        role: body.role,
-        locationId: body.role === "MANAGER" ? body.locationId : null
-      }
-    });
+    const passwordHash = await hash(body.password, 12);
+    const user = await this.prisma.$transaction(async (tx) =>
+      tx.user.create({
+        data: {
+          folio: await nextFolio(tx, "USR"),
+          name: body.name.trim(),
+          email: body.email.trim().toLowerCase(),
+          passwordHash,
+          role: body.role,
+          locationId: body.role === "MANAGER" ? body.locationId : null
+        }
+      })
+    );
     await this.audit(request, "CREATE", "User", user.id, null, { ...user, passwordHash: "[REDACTED]" });
-    return { id: user.id, name: user.name, email: user.email, role: user.role };
+    return { id: user.id, folio: user.folio, name: user.name, email: user.email, role: user.role };
   }
 
   @Patch("users/:id")

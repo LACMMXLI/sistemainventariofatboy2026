@@ -2,6 +2,7 @@ import "dotenv/config";
 import { hash } from "bcryptjs";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "./generated/prisma/client";
+import { nextFolio } from "./folio";
 
 const connectionString = process.env.DATABASE_URL;
 const email = process.env.SYSTEM_OWNER_EMAIL?.trim().toLowerCase();
@@ -29,14 +30,18 @@ async function main() {
       }
     });
   } else {
-    await prisma.user.create({
-      data: {
-        name: "Propietario del sistema",
-        email: ownerEmail,
-        passwordHash: await hash(ownerPassword, 12),
-        role: "SYSTEM_OWNER",
-        hiddenFromAdmin: true
-      }
+    const passwordHash = await hash(ownerPassword, 12);
+    await prisma.$transaction(async (tx) => {
+      await tx.user.create({
+        data: {
+          folio: await nextFolio(tx, "USR"),
+          name: "Propietario del sistema",
+          email: ownerEmail,
+          passwordHash,
+          role: "SYSTEM_OWNER",
+          hiddenFromAdmin: true
+        }
+      });
     });
   }
 }

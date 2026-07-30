@@ -683,6 +683,20 @@ small { color: var(--muted); font-size: 0.82rem; }
 .panel:hover { border-color: var(--line-strong); }
 
 .muted { color: var(--muted); }
+
+/* Folio: identificador legible del registro. Monoespaciado y con cifras de
+   ancho fijo para poder compararlos de un vistazo en una columna. */
+.folio {
+  font-family: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, monospace;
+  font-size: 0.94em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary);
+  white-space: nowrap;
+}
+h2 > .folio { font-size: 0.92em; letter-spacing: 0.01em; }
+small > .folio { color: color-mix(in srgb, var(--primary) 78%, var(--muted)); }
 .eyebrow {
   display: block;
   margin-bottom: 6px;
