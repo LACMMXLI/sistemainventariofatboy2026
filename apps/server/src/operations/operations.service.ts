@@ -162,7 +162,10 @@ export class OperationsService {
             }))
           }
         },
-        include: { lines: { include: { product: { include: { unit: true, category: true } } } } }
+        include: {
+          location: true,
+          lines: { include: { product: { include: { unit: true, category: true } } } }
+        }
       });
     });
   }

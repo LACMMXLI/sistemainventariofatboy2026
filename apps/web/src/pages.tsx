@@ -493,7 +493,7 @@ export function CountsPage() {
       void client.invalidateQueries({ queryKey: ["counts"] });
       toast.info({
         title: "Conteo iniciado",
-        detail: `${count.location.name} · captura producto por producto, se guarda solo.`
+        detail: `${count.location?.name ?? "Sucursal"} · captura producto por producto, se guarda solo.`
       });
       navigate(`/conteos/${count.id}`);
     },
