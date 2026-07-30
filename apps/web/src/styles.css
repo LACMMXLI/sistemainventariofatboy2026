@@ -880,6 +880,9 @@ select {
   }
   .mobile-card:active { background: #f9fafb; }
   .mobile-card > div { display: grid; min-width: 0; }
+  .mobile-card .mobile-card-main { display: flex; align-items: center; gap: 10px; }
+  .mobile-card-main > span:last-child, .mobile-card-actions { display: grid; gap: 3px; }
+  .mobile-card-actions { justify-items: end; }
   .stock-grid, .delivery-grid, .settings-grid { grid-template-columns: 1fr; }
   .stock-card { min-height: 130px; }
   .count-row { grid-template-columns: 1fr 1fr; min-height: 90px; padding: 14px; gap: 10px; }

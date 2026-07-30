@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   ConflictException,
   Controller,
@@ -30,6 +31,47 @@ export class CatalogController {
     });
   }
 
+  @Post("locations")
+  @Roles("SYSTEM_OWNER", "ADMIN")
+  async createLocation(
+    @Req() request: AuthRequest,
+    @Body() body: { name: string; code: string }
+  ) {
+    const name = body.name?.trim();
+    const code = body.code?.trim().toUpperCase();
+    if (!name || name.length < 2 || !code || code.length > 12) {
+      throw new BadRequestException("Nombre y código de sucursal son obligatorios");
+    }
+    const location = await this.prisma.location.create({ data: { name, code } });
+    await this.audit(request, "CREATE", "Location", location.id, null, location);
+    return location;
+  }
+
+  @Patch("locations/:id")
+  @Roles("SYSTEM_OWNER", "ADMIN")
+  async updateLocation(
+    @Req() request: AuthRequest,
+    @Param("id") id: string,
+    @Body() body: { name?: string; code?: string }
+  ) {
+    const before = await this.prisma.location.findUnique({ where: { id } });
+    if (!before) throw new NotFoundException("Sucursal no encontrada");
+    const name = body.name?.trim();
+    const code = body.code?.trim().toUpperCase();
+    if (body.name !== undefined && (!name || name.length < 2)) {
+      throw new BadRequestException("El nombre de la sucursal no es válido");
+    }
+    if (body.code !== undefined && (!code || code.length > 12)) {
+      throw new BadRequestException("El código de la sucursal es obligatorio");
+    }
+    const location = await this.prisma.location.update({
+      where: { id },
+      data: { name, code }
+    });
+    await this.audit(request, "UPDATE", "Location", id, before, location);
+    return location;
+  }
+
   @Get("units")
   units() {
     return this.prisma.unit.findMany({ orderBy: { name: "asc" } });
@@ -37,7 +79,8 @@ export class CatalogController {
 
   @Post("units")
   @Roles("SYSTEM_OWNER", "ADMIN")
-  createUnit(
+  async createUnit(
+    @Req() request: AuthRequest,
     @Body() body: {
       name: string;
       symbol: string;
@@ -45,14 +88,62 @@ export class CatalogController {
       decimalPlaces?: number;
     }
   ) {
-    return this.prisma.unit.create({
+    const name = body.name?.trim();
+    const symbol = body.symbol?.trim();
+    if (!name || name.length < 2 || !symbol || symbol.length > 6) {
+      throw new BadRequestException("Nombre y símbolo de unidad son obligatorios");
+    }
+    if (body.decimalPlaces !== undefined && (!Number.isInteger(body.decimalPlaces) || body.decimalPlaces < 0 || body.decimalPlaces > 4)) {
+      throw new BadRequestException("Los decimales deben estar entre 0 y 4");
+    }
+    const unit = await this.prisma.unit.create({
       data: {
-        name: body.name.trim(),
-        symbol: body.symbol.trim(),
+        name,
+        symbol,
         allowDecimals: body.allowDecimals ?? false,
         decimalPlaces: body.decimalPlaces ?? 0
       }
     });
+    await this.audit(request, "CREATE", "Unit", unit.id, null, unit);
+    return unit;
+  }
+
+  @Patch("units/:id")
+  @Roles("SYSTEM_OWNER", "ADMIN")
+  async updateUnit(
+    @Req() request: AuthRequest,
+    @Param("id") id: string,
+    @Body() body: {
+      name?: string;
+      symbol?: string;
+      allowDecimals?: boolean;
+      decimalPlaces?: number;
+    }
+  ) {
+    const before = await this.prisma.unit.findUnique({ where: { id } });
+    if (!before) throw new NotFoundException("Unidad no encontrada");
+    const name = body.name?.trim();
+    const symbol = body.symbol?.trim();
+    if (body.name !== undefined && (!name || name.length < 2)) {
+      throw new BadRequestException("El nombre de la unidad no es válido");
+    }
+    if (body.symbol !== undefined && (!symbol || symbol.length > 6)) {
+      throw new BadRequestException("El símbolo de la unidad es obligatorio");
+    }
+    if (body.decimalPlaces !== undefined && (!Number.isInteger(body.decimalPlaces) || body.decimalPlaces < 0 || body.decimalPlaces > 4)) {
+      throw new BadRequestException("Los decimales deben estar entre 0 y 4");
+    }
+    const unit = await this.prisma.unit.update({
+      where: { id },
+      data: {
+        name,
+        symbol,
+        allowDecimals: body.allowDecimals,
+        decimalPlaces: body.decimalPlaces
+      }
+    });
+    await this.audit(request, "UPDATE", "Unit", id, before, unit);
+    return unit;
   }
 
   @Get("categories")
@@ -62,10 +153,38 @@ export class CatalogController {
 
   @Post("categories")
   @Roles("SYSTEM_OWNER", "ADMIN")
-  createCategory(@Body() body: { name: string; sortOrder?: number }) {
-    return this.prisma.category.create({
-      data: { name: body.name.trim(), sortOrder: body.sortOrder ?? 0 }
+  async createCategory(
+    @Req() request: AuthRequest,
+    @Body() body: { name: string; sortOrder?: number }
+  ) {
+    const name = body.name?.trim();
+    if (!name || name.length < 2) throw new BadRequestException("El nombre de la categoría no es válido");
+    const category = await this.prisma.category.create({
+      data: { name, sortOrder: body.sortOrder ?? 0 }
     });
+    await this.audit(request, "CREATE", "Category", category.id, null, category);
+    return category;
+  }
+
+  @Patch("categories/:id")
+  @Roles("SYSTEM_OWNER", "ADMIN")
+  async updateCategory(
+    @Req() request: AuthRequest,
+    @Param("id") id: string,
+    @Body() body: { name?: string; sortOrder?: number }
+  ) {
+    const before = await this.prisma.category.findUnique({ where: { id } });
+    if (!before) throw new NotFoundException("Categoría no encontrada");
+    const name = body.name?.trim();
+    if (body.name !== undefined && (!name || name.length < 2)) {
+      throw new BadRequestException("El nombre de la categoría no es válido");
+    }
+    const category = await this.prisma.category.update({
+      where: { id },
+      data: { name, sortOrder: body.sortOrder }
+    });
+    await this.audit(request, "UPDATE", "Category", id, before, category);
+    return category;
   }
 
   @Put("locations/:id/products")
@@ -228,6 +347,7 @@ export class CatalogController {
     @Param("id") id: string,
     @Body() body: {
       name?: string;
+      email?: string;
       role?: "ADMIN" | "MANAGER" | "DRIVER";
       locationId?: string | null;
       active?: boolean;
@@ -237,15 +357,36 @@ export class CatalogController {
     if (!before || (before.hiddenFromAdmin && request.user.role !== "SYSTEM_OWNER")) {
       throw new NotFoundException("Usuario no encontrado");
     }
-    if (before.role === "SYSTEM_OWNER") throw new ConflictException("La cuenta superior no se administra desde la aplicación");
+    if (before.role === "SYSTEM_OWNER" && request.user.id !== id) {
+      throw new NotFoundException("Usuario no encontrado");
+    }
+    const name = body.name?.trim();
+    const email = body.email?.trim().toLowerCase();
+    if (body.name !== undefined && (!name || name.length < 2)) {
+      throw new BadRequestException("El nombre del usuario no es válido");
+    }
+    if (body.email !== undefined && (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
+      throw new BadRequestException("El correo del usuario no es válido");
+    }
+    if (email) {
+      const duplicate = await this.prisma.user.findUnique({ where: { email } });
+      if (duplicate && duplicate.id !== id) throw new ConflictException("El correo ya está registrado");
+    }
     const user = await this.prisma.user.update({
       where: { id },
       data: {
-        name: body.name?.trim(),
-        role: body.role,
-        locationId: body.role === "MANAGER" ? body.locationId : body.role ? null : body.locationId,
-        active: body.active,
-        authVersion: body.active === false ? { increment: 1 } : undefined
+        name,
+        email,
+        role: before.role === "SYSTEM_OWNER" ? undefined : body.role,
+        locationId: before.role === "SYSTEM_OWNER"
+          ? undefined
+          : body.role === "MANAGER"
+            ? body.locationId
+            : body.role
+              ? null
+              : body.locationId,
+        active: before.role === "SYSTEM_OWNER" ? undefined : body.active,
+        authVersion: before.role !== "SYSTEM_OWNER" && body.active === false ? { increment: 1 } : undefined
       }
     });
     await this.audit(request, "UPDATE", "User", id, { ...before, passwordHash: "[REDACTED]" }, { ...user, passwordHash: "[REDACTED]" });

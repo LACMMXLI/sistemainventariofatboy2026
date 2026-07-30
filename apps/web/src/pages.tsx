@@ -260,7 +260,16 @@ export function ProductsPage() {
                 </div>
               ))}
             </div>
-            <div className="mobile-list">{visible.map((product) => <ProductCard key={product.id} product={product} />)}</div>
+            <div className="mobile-list">
+              {visible.map((product) => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  onEdit={canEdit ? () => { setEditing(product); setShowForm(true); } : undefined}
+                  onToggle={canEdit ? () => changeActive.mutate(product) : undefined}
+                />
+              ))}
+            </div>
           </>
         ) : <Empty>No hay productos que coincidan.</Empty>}
       </section>
@@ -290,12 +299,30 @@ export function ProductsPage() {
   );
 }
 
-function ProductCard({ product }: { product: Product }) {
+function ProductCard({
+  product,
+  onEdit,
+  onToggle
+}: {
+  product: Product;
+  onEdit?: () => void;
+  onToggle?: () => void;
+}) {
   return (
     <article className="mobile-card">
-      <span className="product-thumb">{product.imageUrl ? <img src={product.imageUrl} alt="" /> : <IconBox size={22} />}</span>
-      <div><strong>{product.name}</strong><small>{product.category.name} · {product.unit.symbol}</small></div>
-      <Status value={product.active ? "Activo" : "Inactivo"} />
+      <div className="mobile-card-main">
+        <span className="product-thumb">{product.imageUrl ? <img src={product.imageUrl} alt="" /> : <IconBox size={22} />}</span>
+        <span><strong>{product.name}</strong><small>{product.category.name} · {product.unit.symbol}</small></span>
+      </div>
+      <div className="mobile-card-actions">
+        <Status value={product.active ? "Activo" : "Inactivo"} />
+        {onEdit && onToggle && (
+          <span className="row-actions">
+            <button aria-label={`Editar ${product.name}`} onClick={onEdit}><IconPencil size={17} /></button>
+            <button aria-label={`${product.active ? "Desactivar" : "Activar"} ${product.name}`} onClick={onToggle}><IconPower size={17} /></button>
+          </span>
+        )}
+      </div>
     </article>
   );
 }
@@ -850,7 +877,7 @@ function roleLabelEs(role: string) {
 }
 
 export function UsersPage() {
-  const { locations } = useApp();
+  const { locations, user } = useApp();
   const client = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<UserRow | null>(null);
@@ -894,7 +921,9 @@ export function UsersPage() {
     const form = new FormData(event.currentTarget);
     const locationId = role === "MANAGER" ? String(form.get("locationId") || "") || null : null;
     if (editing) {
-      save.mutate({ name: String(form.get("name")), role, locationId });
+      save.mutate(editing.role === "SYSTEM_OWNER"
+        ? { name: String(form.get("name")), email: String(form.get("email")) }
+        : { name: String(form.get("name")), email: String(form.get("email")), role, locationId });
     } else {
       save.mutate({
         name: String(form.get("name")),
@@ -924,13 +953,17 @@ export function UsersPage() {
               </small>
             </div>
             <Status value={item.active ? "Activo" : "Inactivo"} />
-            {item.role !== "SYSTEM_OWNER" && (
-              <span className="row-actions">
+            <span className="row-actions">
+              {(item.role !== "SYSTEM_OWNER" || item.id === user.id) && (
                 <button aria-label={`Editar ${item.name}`} onClick={() => openEdit(item)}><IconPencil size={17} /></button>
+              )}
+              {item.role !== "SYSTEM_OWNER" && (
+                <>
                 <button aria-label={`Restablecer contraseña de ${item.name}`} onClick={() => setResetTarget(item)}><IconKey size={17} /></button>
                 <button aria-label={`${item.active ? "Desactivar" : "Activar"} ${item.name}`} onClick={() => toggleActive.mutate(item)}><IconPower size={17} /></button>
-              </span>
-            )}
+                </>
+              )}
+            </span>
           </article>
         )) : <Empty>No hay usuarios visibles.</Empty>}
       </section>
@@ -947,7 +980,7 @@ export function UsersPage() {
             </div>
             <div className="modal-body">
               <label>Nombre<input name="name" required minLength={2} autoFocus defaultValue={editing?.name} /></label>
-              {!editing && <label>Correo electrónico<input name="email" type="email" required /></label>}
+              <label>Correo electrónico<input name="email" type="email" required defaultValue={editing?.email} /></label>
               {!editing && (
                 <label>
                   Contraseña
@@ -955,7 +988,7 @@ export function UsersPage() {
                   <small>Mínimo 12 caracteres.</small>
                 </label>
               )}
-              <div className="form-grid">
+              {editing?.role !== "SYSTEM_OWNER" && <div className="form-grid">
                 <label>
                   Rol
                   <select name="role" required value={role} onChange={(event) => setRole(event.target.value)}>
@@ -971,7 +1004,7 @@ export function UsersPage() {
                     </select>
                   </label>
                 )}
-              </div>
+              </div>}
               {save.error && <div className="form-error">{save.error.message}</div>}
             </div>
             <div className="modal-actions">
@@ -1027,24 +1060,41 @@ export function AuditPage() {
 export function CatalogPage() {
   const { user, locations } = useApp();
   const client = useQueryClient();
+  const [showLocationForm, setShowLocationForm] = useState(false);
   const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [showUnitForm, setShowUnitForm] = useState(false);
+  const [editingLocation, setEditingLocation] = useState<Location | null>(null);
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
   const { data: categories = [] } = useQuery({ queryKey: ["categories"], queryFn: () => api.get<Category[]>("/categories") });
   const { data: units = [] } = useQuery({ queryKey: ["units"], queryFn: () => api.get<Unit[]>("/units") });
   const canEdit = ["SYSTEM_OWNER", "ADMIN"].includes(user.role);
 
-  const createCategory = useMutation({
-    mutationFn: (body: { name: string }) => api.post("/categories", body),
+  const saveLocation = useMutation({
+    mutationFn: (body: { name: string; code: string }) =>
+      editingLocation ? api.patch(`/locations/${editingLocation.id}`, body) : api.post("/locations", body),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["locations"] });
+      setShowLocationForm(false);
+      setEditingLocation(null);
+    }
+  });
+  const saveCategory = useMutation({
+    mutationFn: (body: { name: string }) =>
+      editingCategory ? api.patch(`/categories/${editingCategory.id}`, body) : api.post("/categories", body),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["categories"] });
       setShowCategoryForm(false);
+      setEditingCategory(null);
     }
   });
-  const createUnit = useMutation({
-    mutationFn: (body: { name: string; symbol: string; allowDecimals: boolean }) => api.post("/units", body),
+  const saveUnit = useMutation({
+    mutationFn: (body: { name: string; symbol: string; allowDecimals: boolean; decimalPlaces: number }) =>
+      editingUnit ? api.patch(`/units/${editingUnit.id}`, body) : api.post("/units", body),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["units"] });
       setShowUnitForm(false);
+      setEditingUnit(null);
     }
   });
 
@@ -1052,46 +1102,93 @@ export function CatalogPage() {
     <Page icon={<IconBox />} title="Catálogo" subtitle="Sucursales, categorías y unidades del sistema">
       <section className="settings-grid">
         <article className="panel">
-          <div className="section-heading"><h2>Sucursales</h2></div>
-          {locations.map((item) => <div className="list-row" key={item.id}><strong>{item.name}</strong><small>{item.code}</small></div>)}
+          <div className="section-heading">
+            <h2>Sucursales</h2>
+            {canEdit && <button className="icon-button" aria-label="Nueva sucursal" onClick={() => { setEditingLocation(null); setShowLocationForm(true); }}><IconPlus size={17} /></button>}
+          </div>
+          {locations.map((item) => (
+            <div className="list-row" key={item.id}>
+              <div><strong>{item.name}</strong><small>{item.code}</small></div>
+              {canEdit && <span className="row-actions"><button aria-label={`Editar ${item.name}`} onClick={() => { setEditingLocation(item); setShowLocationForm(true); }}><IconPencil size={17} /></button></span>}
+            </div>
+          ))}
         </article>
         <article className="panel">
           <div className="section-heading">
             <h2>Categorías</h2>
-            {canEdit && <button className="icon-button" aria-label="Nueva categoría" onClick={() => setShowCategoryForm(true)}><IconPlus size={17} /></button>}
+            {canEdit && <button className="icon-button" aria-label="Nueva categoría" onClick={() => { setEditingCategory(null); setShowCategoryForm(true); }}><IconPlus size={17} /></button>}
           </div>
-          {categories.map((item) => <div className="list-row" key={item.id}><strong>{item.name}</strong></div>)}
+          {categories.map((item) => (
+            <div className="list-row" key={item.id}>
+              <div><strong>{item.name}</strong></div>
+              {canEdit && <span className="row-actions"><button aria-label={`Editar ${item.name}`} onClick={() => { setEditingCategory(item); setShowCategoryForm(true); }}><IconPencil size={17} /></button></span>}
+            </div>
+          ))}
         </article>
         <article className="panel">
           <div className="section-heading">
             <h2>Unidades</h2>
-            {canEdit && <button className="icon-button" aria-label="Nueva unidad" onClick={() => setShowUnitForm(true)}><IconPlus size={17} /></button>}
+            {canEdit && <button className="icon-button" aria-label="Nueva unidad" onClick={() => { setEditingUnit(null); setShowUnitForm(true); }}><IconPlus size={17} /></button>}
           </div>
-          {units.map((item) => <div className="list-row" key={item.id}><strong>{item.name}</strong><small>{item.symbol}</small></div>)}
+          {units.map((item) => (
+            <div className="list-row" key={item.id}>
+              <div><strong>{item.name}</strong><small>{item.symbol}</small></div>
+              {canEdit && <span className="row-actions"><button aria-label={`Editar ${item.name}`} onClick={() => { setEditingUnit(item); setShowUnitForm(true); }}><IconPencil size={17} /></button></span>}
+            </div>
+          ))}
         </article>
       </section>
+
+      {showLocationForm && (
+        <div className="modal-backdrop" role="presentation">
+          <form
+            className="modal"
+            key={editingLocation?.id ?? "new-location"}
+            onSubmit={(event) => {
+              event.preventDefault();
+              const form = new FormData(event.currentTarget);
+              saveLocation.mutate({ name: String(form.get("name")), code: String(form.get("code")) });
+            }}
+          >
+            <div className="modal-heading">
+              <div><h2>{editingLocation ? "Editar sucursal" : "Nueva sucursal"}</h2></div>
+              <button type="button" className="icon-button" onClick={() => setShowLocationForm(false)}><IconX /></button>
+            </div>
+            <div className="modal-body">
+              <label>Nombre<input name="name" required minLength={2} autoFocus defaultValue={editingLocation?.name} /></label>
+              <label>Código<input name="code" required maxLength={12} defaultValue={editingLocation?.code} /></label>
+              {saveLocation.error && <div className="form-error">{saveLocation.error.message}</div>}
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="button ghost" onClick={() => setShowLocationForm(false)}>Cancelar</button>
+              <button className="button primary" disabled={saveLocation.isPending}>{editingLocation ? "Guardar cambios" : "Crear"}</button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {showCategoryForm && (
         <div className="modal-backdrop" role="presentation">
           <form
             className="modal"
+            key={editingCategory?.id ?? "new-category"}
             onSubmit={(event) => {
               event.preventDefault();
               const form = new FormData(event.currentTarget);
-              createCategory.mutate({ name: String(form.get("name")) });
+              saveCategory.mutate({ name: String(form.get("name")) });
             }}
           >
             <div className="modal-heading">
-              <div><h2>Nueva categoría</h2></div>
+              <div><h2>{editingCategory ? "Editar categoría" : "Nueva categoría"}</h2></div>
               <button type="button" className="icon-button" onClick={() => setShowCategoryForm(false)}><IconX /></button>
             </div>
             <div className="modal-body">
-              <label>Nombre<input name="name" required minLength={2} autoFocus /></label>
-              {createCategory.error && <div className="form-error">{createCategory.error.message}</div>}
+              <label>Nombre<input name="name" required minLength={2} autoFocus defaultValue={editingCategory?.name} /></label>
+              {saveCategory.error && <div className="form-error">{saveCategory.error.message}</div>}
             </div>
             <div className="modal-actions">
               <button type="button" className="button ghost" onClick={() => setShowCategoryForm(false)}>Cancelar</button>
-              <button className="button primary" disabled={createCategory.isPending}>Crear</button>
+              <button className="button primary" disabled={saveCategory.isPending}>{editingCategory ? "Guardar cambios" : "Crear"}</button>
             </div>
           </form>
         </div>
@@ -1101,29 +1198,32 @@ export function CatalogPage() {
         <div className="modal-backdrop" role="presentation">
           <form
             className="modal"
+            key={editingUnit?.id ?? "new-unit"}
             onSubmit={(event) => {
               event.preventDefault();
               const form = new FormData(event.currentTarget);
-              createUnit.mutate({
+              const allowDecimals = form.get("allowDecimals") === "on";
+              saveUnit.mutate({
                 name: String(form.get("name")),
                 symbol: String(form.get("symbol")),
-                allowDecimals: form.get("allowDecimals") === "on"
+                allowDecimals,
+                decimalPlaces: allowDecimals ? 2 : 0
               });
             }}
           >
             <div className="modal-heading">
-              <div><h2>Nueva unidad</h2></div>
+              <div><h2>{editingUnit ? "Editar unidad" : "Nueva unidad"}</h2></div>
               <button type="button" className="icon-button" onClick={() => setShowUnitForm(false)}><IconX /></button>
             </div>
             <div className="modal-body">
-              <label>Nombre<input name="name" required minLength={2} autoFocus /></label>
-              <label>Símbolo<input name="symbol" required maxLength={6} /></label>
-              <label className="checkbox-field"><input type="checkbox" name="allowDecimals" /> Permite decimales</label>
-              {createUnit.error && <div className="form-error">{createUnit.error.message}</div>}
+              <label>Nombre<input name="name" required minLength={2} autoFocus defaultValue={editingUnit?.name} /></label>
+              <label>Símbolo<input name="symbol" required maxLength={6} defaultValue={editingUnit?.symbol} /></label>
+              <label className="checkbox-field"><input type="checkbox" name="allowDecimals" defaultChecked={editingUnit?.allowDecimals} /> Permite decimales</label>
+              {saveUnit.error && <div className="form-error">{saveUnit.error.message}</div>}
             </div>
             <div className="modal-actions">
               <button type="button" className="button ghost" onClick={() => setShowUnitForm(false)}>Cancelar</button>
-              <button className="button primary" disabled={createUnit.isPending}>Crear</button>
+              <button className="button primary" disabled={saveUnit.isPending}>{editingUnit ? "Guardar cambios" : "Crear"}</button>
             </div>
           </form>
         </div>

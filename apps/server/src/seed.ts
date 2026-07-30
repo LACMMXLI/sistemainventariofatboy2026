@@ -17,23 +17,28 @@ const ownerPassword = password;
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 
 async function main() {
-  await prisma.user.upsert({
-    where: { email: ownerEmail },
-    update: {
-      name: "Propietario del sistema",
-      role: "SYSTEM_OWNER",
-      locationId: null,
-      active: true,
-      hiddenFromAdmin: true
-    },
-    create: {
-      name: "Propietario del sistema",
-      email: ownerEmail,
-      passwordHash: await hash(ownerPassword, 12),
-      role: "SYSTEM_OWNER",
-      hiddenFromAdmin: true
-    }
-  });
+  const existingOwner = await prisma.user.findFirst({ where: { role: "SYSTEM_OWNER" } });
+  if (existingOwner) {
+    await prisma.user.update({
+      where: { id: existingOwner.id },
+      data: {
+        role: "SYSTEM_OWNER",
+        locationId: null,
+        active: true,
+        hiddenFromAdmin: true
+      }
+    });
+  } else {
+    await prisma.user.create({
+      data: {
+        name: "Propietario del sistema",
+        email: ownerEmail,
+        passwordHash: await hash(ownerPassword, 12),
+        role: "SYSTEM_OWNER",
+        hiddenFromAdmin: true
+      }
+    });
+  }
 }
 
 main().finally(async () => prisma.$disconnect());
