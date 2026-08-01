@@ -2254,6 +2254,39 @@ input[type="checkbox"] {
   .login-card { justify-self: center; }
 }
 
+/**
+ * Las tablas piden más de 940px de ancho, así que abajo de eso la columna de
+ * acciones queda fuera de la pantalla (el caso del celular en horizontal).
+ * Desde aquí se usan tarjetas, que sí caben y se tocan completas.
+ */
+@media (max-width: 1000px) {
+  .table { display: none; }
+  .scroll-panel { max-height: none; min-height: 0; overflow-y: visible; }
+  .mobile-list { display: grid; gap: 9px; }
+  .mobile-card {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 12px;
+    min-height: 72px;
+    padding: 13px;
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    background: var(--surface);
+    transition: var(--transition);
+  }
+  .mobile-card.tappable { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  /* 34px es un blanco muy chico para el dedo. */
+  .mobile-card .row-actions { gap: 8px; }
+  .mobile-card .row-actions button { width: 42px; height: 42px; }
+  .mobile-card:active { background: var(--surface-2); transform: scale(0.99); }
+  .mobile-card > div { display: grid; min-width: 0; gap: 4px; }
+  .mobile-card .mobile-card-main { display: flex; align-items: center; gap: 11px; }
+  .mobile-card-main > span:last-child, .mobile-card-actions { display: grid; gap: 4px; min-width: 0; }
+  .mobile-card-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-card-actions { justify-items: end; }
+}
+
 @media (max-width: 767px) {
   .app-shell { display: block; padding-bottom: 78px; }
   .sidebar { display: none; }
@@ -2307,28 +2340,6 @@ input[type="checkbox"] {
   .product-filters > label:not(.search) { min-width: 0; }
   .product-filters .button { align-self: end; }
   .search { min-width: 100%; }
-
-  .table { display: none; }
-  .scroll-panel { max-height: none; min-height: 0; overflow-y: visible; }
-  .mobile-list { display: grid; gap: 9px; }
-  .mobile-card {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    align-items: center;
-    gap: 12px;
-    min-height: 72px;
-    padding: 13px;
-    border: 1px solid var(--line);
-    border-radius: var(--r);
-    background: var(--surface);
-    transition: var(--transition);
-  }
-  .mobile-card:active { background: var(--surface-2); transform: scale(0.99); }
-  .mobile-card > div { display: grid; min-width: 0; gap: 4px; }
-  .mobile-card .mobile-card-main { display: flex; align-items: center; gap: 11px; }
-  .mobile-card-main > span:last-child, .mobile-card-actions { display: grid; gap: 4px; min-width: 0; }
-  .mobile-card-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mobile-card-actions { justify-items: end; }
 
   .stock-grid, .delivery-grid, .settings-grid { grid-template-columns: 1fr; }
   .stock-card { min-height: 132px; }

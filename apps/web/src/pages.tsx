@@ -358,8 +358,22 @@ function ProductCard({
   onEdit?: () => void;
   onToggle?: () => void;
 }) {
+  // En el celular el lápiz es un blanco muy chico y se pierde al girar la
+  // pantalla: tocar la tarjeta completa abre la edición.
   return (
-    <article className="mobile-card">
+    <article
+      className={`mobile-card${onEdit ? " tappable" : ""}`}
+      role={onEdit ? "button" : undefined}
+      tabIndex={onEdit ? 0 : undefined}
+      aria-label={onEdit ? `Editar ${product.name}` : undefined}
+      onClick={onEdit}
+      onKeyDown={(event) => {
+        if (onEdit && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          onEdit();
+        }
+      }}
+    >
       <div className="mobile-card-main">
         <span className="product-thumb">{product.imageUrl ? <img src={product.imageUrl} alt="" /> : <IconBox size={22} />}</span>
         <span><strong>{product.name}</strong><small><span className="folio">{product.folio}</span> · {product.category.name} · {product.unit.symbol}</small></span>
@@ -368,8 +382,18 @@ function ProductCard({
         <Status value={product.active ? "Activo" : "Inactivo"} />
         {onEdit && onToggle && (
           <span className="row-actions">
-            <button aria-label={`Editar ${product.name}`} onClick={onEdit}><IconPencil size={17} /></button>
-            <button aria-label={`${product.active ? "Desactivar" : "Activar"} ${product.name}`} onClick={onToggle}><IconPower size={17} /></button>
+            <button
+              aria-label={`Editar ${product.name}`}
+              onClick={(event) => { event.stopPropagation(); onEdit(); }}
+            >
+              <IconPencil size={17} />
+            </button>
+            <button
+              aria-label={`${product.active ? "Desactivar" : "Activar"} ${product.name}`}
+              onClick={(event) => { event.stopPropagation(); onToggle(); }}
+            >
+              <IconPower size={17} />
+            </button>
           </span>
         )}
       </div>
