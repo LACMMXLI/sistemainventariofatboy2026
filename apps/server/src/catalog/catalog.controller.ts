@@ -291,14 +291,14 @@ export class CatalogController {
     if (input.unitId && input.unitId !== before.unitId && hasHistory) {
       throw new ConflictException("La unidad no puede cambiar porque el producto tiene movimientos");
     }
+    const normalizedName = input.name?.trim().toLocaleLowerCase("es-MX");
+    if (normalizedName && normalizedName !== before.normalizedName) {
+      const duplicate = await this.prisma.product.findUnique({ where: { normalizedName } });
+      if (duplicate) throw new ConflictException("Ya existe un producto con ese nombre");
+    }
     const product = await this.prisma.product.update({
       where: { id },
-      data: {
-        ...input,
-        normalizedName: input.name
-          ? input.name.trim().toLocaleLowerCase("es-MX")
-          : undefined
-      }
+      data: { ...input, normalizedName }
     });
     await this.audit(request, "UPDATE", "Product", id, before, product);
     return product;

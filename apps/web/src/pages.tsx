@@ -202,18 +202,30 @@ export function ProductsPage() {
   const { data: units = [] } = useQuery({ queryKey: ["units"], queryFn: () => api.get<Unit[]>("/units") });
   const create = useMutation({
     mutationFn: async ({ body, image }: { body: object; image?: File }) => {
+      const wasEditing = Boolean(editing);
       const product = editing
         ? await api.patch<Product>(`/products/${editing.id}`, body)
         : await api.post<Product>("/products", body);
       if (!editing) setEditing(product);
-      return image ? api.upload<Product>(`/products/${product.id}/image`, image) : product;
+      if (!image) return { product, wasEditing, imageError: null };
+      // Los datos ya quedaron guardados: si la imagen falla (almacenamiento sin
+      // configurar, red) se avisa aparte en vez de dar por perdida la edición.
+      try {
+        return { product: await api.upload<Product>(`/products/${product.id}/image`, image), wasEditing, imageError: null };
+      } catch (cause) {
+        return { product, wasEditing, imageError: errorMessage(cause) };
+      }
     },
-    onSuccess: (product) => {
+    onSuccess: ({ product, wasEditing, imageError }) => {
       void client.invalidateQueries({ queryKey: ["products"] });
-      toast.success({
-        title: editing ? "Producto actualizado" : "Producto creado",
-        detail: product.name
-      });
+      if (imageError) {
+        toast.error({ title: "Se guardó el producto, pero no la imagen", detail: imageError });
+      } else {
+        toast.success({
+          title: wasEditing ? "Producto actualizado" : "Producto creado",
+          detail: product.name
+        });
+      }
       setShowForm(false);
       setEditing(null);
     },
